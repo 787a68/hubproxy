@@ -1,12 +1,14 @@
-name: 发布二进制文件
+name: release
 
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（留空则取当天日期，如 2026.07.06）'
+        description: "版本号，留空则使用 UTC 日期，如 2026.07.06"
         required: false
-        default: ''
+        default: ""
 
 jobs:
   build-and-release:
@@ -26,13 +28,18 @@ jobs:
           go-version-file: "src/go.mod"
           cache-dependency-path: "src/go.sum"
           
-      - name: 获取版本号（留空取当天日期）
+      - name: 获取版本号
         id: version
         run: |
           VERSION="${{ github.event.inputs.version }}"
           if [ -z "$VERSION" ]; then
-            VERSION="$(date -u +%Y.%m.%d)"
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              VERSION="${GITHUB_REF#refs/tags/}"
+            else
+              VERSION="$(date -u +%Y.%m.%d)"
+            fi
           fi
+          VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "版本号: $VERSION"
           
@@ -71,10 +78,10 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           
           # Linux AMD64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -o ../build/hubproxy/hubproxy-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -trimpath -o ../build/hubproxy/hubproxy-linux-amd64 .
           
           # Linux ARM64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -o ../build/hubproxy/hubproxy-linux-arm64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -trimpath -o ../build/hubproxy/hubproxy-linux-arm64 .
           
           # 压缩二进制文件
           upx -9 ../build/hubproxy/hubproxy-linux-amd64
@@ -108,7 +115,6 @@ jobs:
         run: |
           mkdir -p build/packages
           VERSION="${{ steps.version.outputs.version }}"
-          NFPM_VERSION="${VERSION#v}"
 
           package() {
             hubproxy_arch="$1"
@@ -124,7 +130,7 @@ jobs:
             rm -rf build/package-root
             mkdir -p build/package-root
             cp "${binary}" build/package-root/hubproxy
-            NFPM_ARCH="${nfpm_arch}" NFPM_VERSION="${NFPM_VERSION}" nfpm package --config "${config}" --packager "${packager}" --target "${temp_dir}/"
+            NFPM_ARCH="${nfpm_arch}" NFPM_VERSION="${VERSION}" nfpm package --config "${config}" --packager "${packager}" --target "${temp_dir}/"
             mv "${temp_dir}"/*.${packager} "${target}"
             rm -rf "${temp_dir}"
             rm -rf build/package-root

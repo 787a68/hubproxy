@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"io"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -66,7 +65,7 @@ func GitHubProxyHandler(c *gin.Context) {
 				repoName := strings.TrimSuffix(matches[1], ".git")
 				repoPath = username + "/" + repoName
 			}
-			log.Printf("GitHub仓库 %s 访问被拒绝: %s", repoPath, reason)
+			utils.Logger().Warn("github access denied", "repo", repoPath, "reason", reason)
 			c.String(http.StatusForbidden, reason)
 			return
 		}
@@ -108,13 +107,16 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 	req, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, u, c.Request.Body)
 	if err != nil {
-		log.Printf("创建请求失败: %v", err)
+		utils.Logger().Warn("create request failed", "url", u, "err", err)
 		c.String(http.StatusInternalServerError, "server error")
 		return
 	}
 
-	// 复制请求头
+	// 复制请求头，跳过逐跳/传输类头部，避免重定向后长度或编码不匹配
 	for key, values := range c.Request.Header {
+		if isHopByHopHeader(key) {
+			continue
+		}
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
@@ -123,13 +125,13 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 	resp, err := utils.GetGlobalHTTPClient().Do(req)
 	if err != nil {
-		log.Printf("请求上游失败: %v", err)
+		utils.Logger().Warn("upstream request failed", "url", u, "err", err)
 		c.String(http.StatusInternalServerError, "server error")
 		return
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("关闭响应体失败: %v", err)
+			utils.Logger().Warn("close response body failed", "err", err)
 		}
 	}()
 
@@ -174,7 +176,7 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 		processedBody, processedSize, err := utils.ProcessSmart(resp.Body, isGzipCompressed, realHost)
 		if err != nil {
-			log.Printf("脚本处理失败: %v", err)
+			utils.Logger().Warn("script processing failed", "url", u, "err", err)
 			c.String(http.StatusBadGateway, "Script processing failed")
 			return
 		}
@@ -188,6 +190,9 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 		// 复制其他响应头
 		for key, values := range resp.Header {
+			if isHopByHopHeader(key) {
+				continue
+			}
 			for _, value := range values {
 				c.Header(key, value)
 			}
@@ -212,6 +217,9 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 	} else {
 		// 复制响应头
 		for key, values := range resp.Header {
+			if isHopByHopHeader(key) {
+				continue
+			}
 			for _, value := range values {
 				c.Header(key, value)
 			}
@@ -231,7 +239,25 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 		// 直接流式转发
 		if _, err := io.Copy(c.Writer, resp.Body); err != nil {
-			log.Printf("转发响应体失败: %v", err)
+			utils.Logger().Warn("forward response body failed", "url", u, "err", err)
 		}
 	}
+}
+
+// isHopByHopHeader 判断是否为 HTTP/1.1 逐跳头部
+// 这些头部在代理重定向时不应转发，避免 Content-Length/Encoding 不匹配
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Proxy-Connection":    true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+func isHopByHopHeader(key string) bool {
+	return hopByHopHeaders[http.CanonicalHeaderKey(key)]
 }

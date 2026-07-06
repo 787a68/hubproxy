@@ -18,18 +18,22 @@ periodHours = 3.0
 [security]
 # IP白名单，支持单个IP或IP段
 # 白名单中的IP不受限流限制
-whiteList = [
-    "127.0.0.1",
-    "172.17.0.0/16",
-    "192.168.1.0/24"
-]
+# 示例：
+# whiteList = [
+#     "127.0.0.1",
+#     "172.17.0.0/16",
+#     "192.168.1.0/24"
+# ]
+whiteList = []
 
 # IP黑名单，支持单个IP或IP段
 # 黑名单中的IP将被直接拒绝访问
-blackList = [
-    "192.168.100.1",
-    "192.168.100.0/24"
-]
+# 示例：
+# blackList = [
+#     "192.168.100.1",
+#     "192.168.100.0/24"
+# ]
+blackList = []
 
 [access]
 # 代理服务白名单（支持GitHub仓库和Docker镜像，支持通配符）
@@ -38,17 +42,19 @@ whiteList = []
 
 # 代理服务黑名单（支持GitHub仓库和Docker镜像，支持通配符）
 # 禁止访问黑名单中的仓库/镜像
-blackList = [
-    "baduser/malicious-repo",
-    "*/malicious-repo",
-    "baduser/*"
-]
+# 示例：
+# blackList = [
+#     "baduser/malicious-repo",
+#     "*/malicious-repo",
+#     "baduser/*"
+# ]
+blackList = []
 
 # 代理配置，支持有用户名/密码认证和无认证模式
 # 无认证: socks5://127.0.0.1:1080
 # 有认证: socks5://username:password@127.0.0.1:1080
 # 留空不使用代理
-proxy = "" 
+proxy = ""
 
 [download]
 # 批量下载离线镜像数量限制
@@ -60,7 +66,7 @@ maxImages = 10
 # GitHub Container Registry
 [registries."ghcr.io"]
 upstream = "ghcr.io"
-authHost = "ghcr.io/token" 
+authHost = "ghcr.io/token"
 authType = "github"
 enabled = true
 
@@ -88,5 +94,5 @@ enabled = true
 [tokenCache]
 # 是否启用缓存(同时控制Token和Manifest缓存)显著提升性能
 enabled = true
-# 默认缓存时间(分钟)
+# 默认缓存时间，Go duration 格式（如 20m、1h、30s）
 defaultTTL = "20m"

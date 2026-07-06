@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -319,17 +318,6 @@ func searchDockerHubWithDepth(ctx context.Context, query string, page, pageSize 
 		for i := range result.Results {
 			normalizeRepository(&result.Results[i])
 		}
-
-		if isUserRepo && namespace != "" {
-			filteredResults := make([]Repository, 0)
-			for _, repo := range result.Results {
-				if strings.EqualFold(repo.Namespace, namespace) {
-					filteredResults = append(filteredResults, repo)
-				}
-			}
-			result.Results = filteredResults
-			result.Count = len(filteredResults)
-		}
 	}
 
 	searchCache.Set(cacheKey, result)
@@ -465,14 +453,14 @@ func parsePaginationParams(c *gin.Context, defaultPageSize int) (page, pageSize 
 		if v, err := strconv.Atoi(p); err == nil && v > 0 {
 			page = v
 		} else if err != nil {
-			log.Printf("解析page参数失败: %v", err)
+			utils.Logger().Warn("parse page param failed", "value", p, "err", err)
 		}
 	}
 	if ps := c.Query("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
 			pageSize = v
 		} else if err != nil {
-			log.Printf("解析page_size参数失败: %v", err)
+			utils.Logger().Warn("parse page_size param failed", "value", ps, "err", err)
 		}
 	}
 
@@ -482,7 +470,7 @@ func parsePaginationParams(c *gin.Context, defaultPageSize int) (page, pageSize 
 func safeCloseResponseBody(body io.ReadCloser, context string) {
 	if body != nil {
 		if err := body.Close(); err != nil {
-			log.Printf("关闭%s失败: %v", context, err)
+			utils.Logger().Warn("close response body failed", "context", context, "err", err)
 		}
 	}
 }

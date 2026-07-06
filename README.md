@@ -1,169 +1,180 @@
 # HubProxy
 
-<p align="center">
-  <strong>Docker & GitHub 加速代理服务器 · 极速 · 轻量 · 自托管</strong>
-</p>
+Docker Registry、GitHub 文件、Hugging Face 文件加速代理。单二进制部署，内置前端页面、限流、缓存、健康检查和 Prometheus 指标。
 
-<p align="center">
-  <a href="https://github.com/787a68/hubproxy/actions"><img src="https://github.com/787a68/hubproxy/actions/workflows/build-docker.yml/badge.svg" alt="Build"></a>
-  <img src="https://img.shields.io/github/go-mod/go-version/787a68/hubproxy" alt="Go version">
-  <img src="https://img.shields.io/github/license/787a68/hubproxy" alt="License">
-  <img src="https://img.shields.io/github/v/release/787a68/hubproxy" alt="Release">
-</p>
+[![Docker](https://github.com/787a68/hubproxy/actions/workflows/docker-build.yml/badge.svg)](https://github.com/787a68/hubproxy/actions/workflows/docker-build.yml)
+[![Release](https://github.com/787a68/hubproxy/actions/workflows/release.yml/badge.svg)](https://github.com/787a68/hubproxy/actions/workflows/release.yml)
 
----
+## 功能
 
-## ✨ 特性
+- Docker 镜像代理：Docker Hub、GHCR、GCR、Quay、registry.k8s.io。
+- Docker 离线包：单镜像或批量镜像流式导出 tar，支持平台选择。
+- GitHub 文件代理：release、raw、archive、API、git clone、脚本链接改写。
+- Hugging Face 文件代理。
+- Docker Hub 镜像搜索和标签查询。
+- IP 限流、IP 黑白名单、仓库黑白名单。
+- `/healthz` 健康检查和 `/metrics` Prometheus 指标。
+- 自动跟随系统深色模式的内置前端。
 
-- 🐳 **Docker 镜像加速** — 支持 Docker Hub、GHCR、GCR、Quay、k8s.io 等多个上游
-- 🐳 **离线镜像包** — 流式打包下载，单镜像或批量打包，支持多平台选择
-- 📁 **GitHub 文件加速** — Release / Raw / API / Archive，智能重定向跟随
-- 🤖 **AI 模型仓库** — 支持 Hugging Face 模型下载加速
-- ⚡ **极致性能** —
-  - `atomic.Pointer` 无锁配置读取
-  - 64 分片缓存 + LRU，零争用
-  - 64 分片限流器，独立锁，低争用
-  - FNV-1a 哈希替代 MD5 分片选择
-  - 慢请求 + 错误日志（默认不记每请求）
-  - 结构化 `slog` 日志（JSON 格式）
-- 🛡️ **智能限流** — IPv4 / IPv6，IPv6 /64 段聚合，CIDR 白/黑名单
-- 🚫 **仓库审计** — 支持镜像名与 GitHub 仓库的通配符黑白名单
-- 🔍 **镜像搜索** — 在线搜索 Docker Hub，带缓存与重试
-- 📊 **可观测性** —
-  - `/metrics` Prometheus 指标
-  - `/healthz` 健康检查
-  - 结构化 JSON 日志 + Request ID
-- 🔧 **统一配置** — TOML 文件 + 环境变量覆盖
-- 🚀 **单二进制** — Go 静态编译，UPX 压缩，镜像 < 20MB
-- 🛡️ **安全** — 容器非 root，HEALTHCHECK，无 OS 依赖
+## Docker 镜像标签
 
-## 📦 快速开始
+自动构建会推送以下标签：
 
-### Docker（推荐）
+| 标签 | 说明 |
+| --- | --- |
+| `latest` | 最新主分支多架构镜像 |
+| `YYYY.MM.DD` | UTC 日期版本，多架构镜像 |
+| `linux-amd64` | 最新 amd64 单架构镜像 |
+| `linux-arm64` | 最新 arm64 单架构镜像 |
+
+不会再发布 `main`、`sha-*` 标签，也不会发布 provenance/SBOM 造成的额外无标签 digest 记录。
+
+## 快速启动
 
 ```bash
 docker run -d \
   --name hubproxy \
   -p 5000:5000 \
-  --restart always \
+  --restart unless-stopped \
   ghcr.io/787a68/hubproxy:latest
 ```
 
-### Docker Compose
+Docker Compose：
 
-```yaml
-services:
-  hubproxy:
-    image: ghcr.io/787a68/hubproxy:latest
-    container_name: hubproxy
-    restart: always
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./config.toml:/app/config.toml:ro
+```bash
+docker compose up -d
 ```
 
-### 脚本安装（Systemd / OpenRC）
+`docker-compose.yml` 默认挂载 `./src/config.toml` 到容器内 `/app/config.toml`。
+
+## 二进制安装
+
+每次推送 `v*` 标签或手动触发都会自动构建 Release，产物包括：
+
+- `hubproxy-linux-amd64.tar.gz`
+- `hubproxy-linux-arm64.tar.gz`
+- `hubproxy-linux-amd64.deb`
+- `hubproxy-linux-arm64.deb`
+- `hubproxy-linux-amd64.rpm`
+- `hubproxy-linux-arm64.rpm`
+- `hubproxy-linux-amd64.apk`
+- `hubproxy-linux-arm64.apk`
+
+脚本安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/787a68/hubproxy/main/install.sh | sh
 ```
 
-## 🚀 使用
-
-### Docker 镜像加速
+指定版本：
 
 ```bash
-# 直接拉取
-docker pull yourdomain.com/nginx
-docker pull yourdomain.com/ghcr.io/library/nginx
+VERSION=2026.07.06 curl -fsSL https://raw.githubusercontent.com/787a68/hubproxy/main/install.sh | sh
+```
 
-# 或配置为全局镜像加速
-# /etc/docker/daemon.json
+## 使用
+
+Docker 镜像代理：
+
+```bash
+docker pull your-domain.com/nginx
+docker pull your-domain.com/library/nginx
+docker pull your-domain.com/ghcr.io/owner/image:tag
+docker pull your-domain.com/quay.io/org/image:tag
+docker pull your-domain.com/registry.k8s.io/pause:3.9
+```
+
+Docker daemon mirror：
+
+```json
 {
-  "registry-mirrors": ["https://yourdomain.com"]
+  "registry-mirrors": ["https://your-domain.com"]
 }
 ```
 
-### GitHub 文件加速
+GitHub 文件代理：
 
 ```bash
-# 原链接
-https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz
-
-# 加速链接
-https://yourdomain.com/https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz
-
-# git clone 加速
-git clone https://yourdomain.com/https://github.com/user/repo.git
+https://your-domain.com/https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz
+https://your-domain.com/https://raw.githubusercontent.com/user/repo/main/file.txt
+git clone https://your-domain.com/https://github.com/user/repo.git
 ```
 
-### 离线镜像包
+离线镜像包：
 
 ```bash
-# 准备下载令牌
-curl "https://yourdomain.com/api/image/download/nginx?mode=prepare"
-
-# 用返回的 URL 下载 tar 包
-curl -OJ "https://yourdomain.com/api/image/download/nginx?token=<TOKEN>"
-
-# 批量打包（POST JSON）
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"images":["nginx:1.25","redis:7"],"useCompressedLayers":true}' \
-  "https://yourdomain.com/api/image/batch?mode=prepare"
+curl "https://your-domain.com/api/image/download/nginx?mode=prepare"
+curl -OJ "https://your-domain.com/api/image/download/nginx?token=TOKEN"
 ```
 
-### 在线搜索
+批量离线包：
 
 ```bash
-curl "https://yourdomain.com/search?q=nginx"
-curl "https://yourdomain.com/tags/library/nginx?page=1&page_size=100"
+curl -X POST "https://your-domain.com/api/image/batch?mode=prepare" \
+  -H "Content-Type: application/json" \
+  -d '{"images":["nginx:1.25","redis:7"],"platform":"linux/amd64","useCompressedLayers":true}'
 ```
 
-## ⚙️ 配置
+搜索：
 
-完整配置见 [`config.toml`](src/config.toml)。所有字段均可用环境变量覆盖：
+```bash
+curl "https://your-domain.com/search?q=nginx"
+curl "https://your-domain.com/tags/library/nginx?page=1&page_size=100"
+```
+
+## 配置
+
+默认配置在 `src/config.toml`。启动时默认读取当前工作目录的 `config.toml`，也可以用 `CONFIG_PATH` 指定。
 
 | 环境变量 | 默认值 | 说明 |
-|---------|--------|------|
+| --- | --- | --- |
 | `CONFIG_PATH` | `config.toml` | 配置文件路径 |
 | `SERVER_HOST` | `0.0.0.0` | 监听地址 |
 | `SERVER_PORT` | `5000` | 监听端口 |
-| `ENABLE_H2C` | `false` | 启用 HTTP/2 cleartext |
-| `ENABLE_FRONTEND` | `true` | 启用前端页面 |
-| `MAX_FILE_SIZE` | `2147483648` | GitHub 文件大小上限（字节） |
-| `RATE_LIMIT` | `500` | 每周期请求数 |
-| `RATE_PERIOD_HOURS` | `3` | 限流周期（小时） |
-| `IP_WHITELIST` | — | IP 白名单（逗号分隔，支持 CIDR） |
-| `IP_BLACKLIST` | — | IP 黑名单（逗号分隔，支持 CIDR） |
-| `MAX_IMAGES` | `10` | 批量下载镜像数上限 |
-| `ACCESS_PROXY` | — | 上游代理（如 `socks5://127.0.0.1:1080`） |
+| `ENABLE_H2C` | `false` | 启用 h2c |
+| `ENABLE_FRONTEND` | `true` | 启用内置前端 |
+| `MAX_FILE_SIZE` | `2147483648` | GitHub 文件大小限制，字节 |
+| `RATE_LIMIT` | `500` | 单 IP 周期请求数 |
+| `RATE_PERIOD_HOURS` | `3` | 限流周期，小时 |
+| `IP_WHITELIST` | 空 | IP 白名单，逗号分隔，支持 CIDR |
+| `IP_BLACKLIST` | 空 | IP 黑名单，逗号分隔，支持 CIDR |
+| `MAX_IMAGES` | `10` | 批量离线包最大镜像数 |
+| `ACCESS_PROXY` | 空 | 上游代理，如 `socks5://127.0.0.1:1080` |
 
-## 📊 监控
+## 监控
 
 ```bash
-# Prometheus 指标
-curl https://yourdomain.com/metrics
-
-# 健康检查
-curl https://yourdomain.com/healthz
+curl http://127.0.0.1:5000/healthz
+curl http://127.0.0.1:5000/metrics
 ```
 
-指标包含：`hubproxy_requests_total`、`hubproxy_cache_hits_total`、`hubproxy_cache_misses_total`、`hubproxy_bytes_proxied_total`、`hubproxy_docker_manifest_requests_total`、`hubproxy_docker_blob_requests_total`、`hubproxy_github_requests_total`、`hubproxy_search_requests_total`。
+## 本地开发
 
-Prometheus scrape 示例：
-
-```yaml
-scrape_configs:
-  - job_name: 'hubproxy'
-    static_configs:
-      - targets: ['yourdomain.com:5000']
-    metrics_path: /metrics
+```bash
+cd src
+go test ./...
+go run .
 ```
 
-## 🔧 反向代理示例
+构建：
 
-### Caddy（自动 HTTPS）
+```bash
+cd src
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X 'main.buildVersion=2026.07.06'" -o hubproxy .
+```
+
+Docker 构建：
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --build-arg VERSION=2026.07.06 \
+  -t ghcr.io/787a68/hubproxy:latest .
+```
+
+## 反向代理
+
+Caddy 示例：
 
 ```caddy
 example.com {
@@ -175,81 +186,6 @@ example.com {
 }
 ```
 
-### Cloudflare CDN
-
-```caddy
-example.com {
-    reverse_proxy 127.0.0.1:5000 {
-        header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
-        header_up X-Real-IP {http.request.header.CF-Connecting-IP}
-        header_up X-Forwarded-Proto https
-    }
-}
-```
-
-## 🏗️ 部署架构
-
-```
-Docker客户端 ──→ HubProxy ──→ go-containerregistry ──→ 上游Registry
-                     │              ↕ (内部处理401+token)
-                     │              ──→ 认证服务器
-                     ↓
-              /v2/*  /token/*
-              /api/image/*  (离线包)
-              /search /tags  (搜索)
-              /https://github.com/*  (GitHub代理)
-              /metrics  /healthz  (监控)
-```
-
-## 🛠️ 开发
-
-```bash
-# 本地运行
-cd src && go run .
-
-# 测试
-go test ./... -race
-
-# 构建
-CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=v1.0.0" -trimpath -o hubproxy .
-
-# Docker 构建多架构
-docker buildx build --platform linux/amd64,linux/arm64 -t hubproxy:test .
-```
-
-## 📋 服务管理
-
-```bash
-# systemd
-sudo systemctl status|restart|stop hubproxy
-sudo journalctl -u hubproxy -f
-
-# OpenRC (Alpine)
-sudo rc-service hubproxy status|restart|stop
-sudo tail -f /var/log/hubproxy.log
-
-# 编辑配置
-sudo vi /etc/hubproxy/config.toml
-```
-
-## 📁 文件路径
-
-| 路径 | 说明 |
-|------|------|
-| `/usr/bin/hubproxy` | 二进制文件 |
-| `/etc/hubproxy/config.toml` | 配置文件 |
-| `/lib/systemd/system/hubproxy.service` | systemd 服务 |
-| `/etc/init.d/hubproxy` | OpenRC 服务 |
-| `/var/log/hubproxy.log` | Alpine 日志 |
-
-## ⚠️ 免责声明
-
-本程序仅供学习交流使用，请遵守当地法律法规，作者不对使用者的任何行为承担责任。
-
-## 🙏 致谢
-
-本项目 Fork 自 [sky22333/hubproxy](https://github.com/sky22333/hubproxy)，感谢原作者的开源贡献。在上游基础上进行了性能重构与工程化改进。
-
-## 📄 License
+## License
 
 MIT

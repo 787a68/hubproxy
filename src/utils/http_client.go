@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,7 +23,7 @@ func InitHTTPClients() {
 	if p := cfg.Access.Proxy; p != "" {
 		proxyURL, err := url.Parse(p)
 		if err != nil {
-			log.Printf("警告: 代理URL解析失败: %v", err)
+			Logger().Warn("parse proxy URL failed", "proxy", p, "err", err)
 		} else {
 			proxyFunc = http.ProxyURL(proxyURL)
 		}
@@ -50,7 +49,7 @@ func InitHTTPClients() {
 	}
 
 	searchTransport := &http.Transport{
-		Proxy:                 proxyFunc,
+		Proxy: proxyFunc,
 		DialContext: (&net.Dialer{
 			Timeout:   5 * time.Second,
 			KeepAlive: 30 * time.Second,

@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -85,7 +84,7 @@ func handleRegistryRequest(c *gin.Context, pathWithoutV2 string) {
 // checkDockerAccess 检查 Docker 镜像访问权限
 func checkDockerAccess(c *gin.Context, image string) bool {
 	if allowed, reason := utils.GlobalAccessController.CheckDockerAccess(image); !allowed {
-		log.Printf("Docker镜像 %s 访问被拒绝: %s", image, reason)
+		utils.Logger().Warn("docker access denied", "image", image, "reason", reason)
 		c.String(http.StatusForbidden, "镜像访问被限制")
 		return false
 	}
@@ -120,7 +119,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 
 	ref, err := parseReference(imageRef, reference)
 	if err != nil {
-		log.Printf("解析镜像引用失败: %v", err)
+		utils.Logger().Warn("parse reference failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid reference")
 		return
 	}
@@ -128,7 +127,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 	if c.Request.Method == http.MethodHead {
 		desc, err := remote.Head(ref, options...)
 		if err != nil {
-			log.Printf("HEAD请求失败: %v", err)
+			utils.Logger().Warn("head manifest failed", "ref", imageRef, "err", err)
 			c.String(http.StatusNotFound, "Manifest not found")
 			return
 		}
@@ -141,7 +140,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 
 	desc, err := remote.Get(ref, options...)
 	if err != nil {
-		log.Printf("GET请求失败: %v", err)
+		utils.Logger().Warn("get manifest failed", "ref", imageRef, "err", err)
 		c.String(http.StatusNotFound, "Manifest not found")
 		return
 	}
@@ -167,28 +166,28 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 func handleBlobRequest(c *gin.Context, imageRef, digest string, options []remote.Option) {
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
-		log.Printf("解析digest引用失败: %v", err)
+		utils.Logger().Warn("parse digest failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid digest reference")
 		return
 	}
 
 	layer, err := remote.Layer(digestRef, options...)
 	if err != nil {
-		log.Printf("获取layer失败: %v", err)
+		utils.Logger().Warn("get layer failed", "ref", imageRef, "digest", digest, "err", err)
 		c.String(http.StatusNotFound, "Layer not found")
 		return
 	}
 
 	size, err := layer.Size()
 	if err != nil {
-		log.Printf("获取layer大小失败: %v", err)
+		utils.Logger().Warn("get layer size failed", "ref", imageRef, "err", err)
 		c.String(http.StatusInternalServerError, "Failed to get layer size")
 		return
 	}
 
 	reader, err := layer.Compressed()
 	if err != nil {
-		log.Printf("获取layer内容失败: %v", err)
+		utils.Logger().Warn("get layer content failed", "ref", imageRef, "err", err)
 		c.String(http.StatusInternalServerError, "Failed to get layer content")
 		return
 	}
@@ -201,7 +200,7 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string, options []remote
 
 	written, err := io.Copy(c.Writer, reader)
 	if err != nil {
-		log.Printf("复制layer内容失败: %v", err)
+		utils.Logger().Warn("copy layer failed", "ref", imageRef, "err", err)
 	}
 	utils.GlobalMetrics.BytesProxied.Add(written)
 }
@@ -210,14 +209,14 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string, options []remote
 func handleTagsRequest(c *gin.Context, imageRef string, options []remote.Option) {
 	repo, err := name.NewRepository(imageRef)
 	if err != nil {
-		log.Printf("解析repository失败: %v", err)
+		utils.Logger().Warn("parse repository failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid repository")
 		return
 	}
 
 	tags, err := remote.List(repo, options...)
 	if err != nil {
-		log.Printf("获取tags失败: %v", err)
+		utils.Logger().Warn("list tags failed", "ref", imageRef, "err", err)
 		c.String(http.StatusNotFound, "Tags not found")
 		return
 	}
@@ -248,7 +247,7 @@ var dockerProxy *DockerProxy
 func InitDockerProxy() {
 	registry, err := name.NewRegistry("registry-1.docker.io")
 	if err != nil {
-		log.Printf("创建Docker registry失败: %v", err)
+		utils.Logger().Error("create docker registry failed", "err", err)
 		return
 	}
 	dockerProxy = &DockerProxy{
@@ -362,10 +361,14 @@ func proxyDockerAuthOriginalWithDomain(c *gin.Context, targetDomain string) {
 		return
 	}
 	for k, vals := range c.Request.Header {
+		if isHopByHopHeader(k) {
+			continue
+		}
 		for _, v := range vals {
 			req.Header.Add(k, v)
 		}
 	}
+	req.Header.Del("Host")
 
 	resp, err := utils.GetGlobalHTTPClient().Do(req)
 	if err != nil {
@@ -384,6 +387,9 @@ func proxyDockerAuthOriginalWithDomain(c *gin.Context, targetDomain string) {
 	}
 
 	for k, vals := range resp.Header {
+		if isHopByHopHeader(k) {
+			continue
+		}
 		for _, v := range vals {
 			if k == "Www-Authenticate" {
 				v = rewriteAuthHeader(v, proxyHost, scheme)
@@ -393,7 +399,7 @@ func proxyDockerAuthOriginalWithDomain(c *gin.Context, targetDomain string) {
 	}
 	c.Status(resp.StatusCode)
 	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
-		log.Printf("复制认证响应失败: %v", err)
+		utils.Logger().Warn("copy auth response failed", "err", err)
 	}
 }
 

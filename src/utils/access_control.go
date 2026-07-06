@@ -6,20 +6,12 @@ import (
 	"hubproxy/config"
 )
 
-// ResourceType 资源类型
-type ResourceType string
-
-const (
-	ResourceTypeGitHub ResourceType = "github"
-	ResourceTypeDocker ResourceType = "docker"
-)
-
 // AccessController 统一访问控制器
 type AccessController struct {
 }
 
-// DockerImageInfo Docker镜像信息
-type DockerImageInfo struct {
+// dockerImageInfo Docker镜像信息
+type dockerImageInfo struct {
 	Namespace  string
 	Repository string
 	Tag        string
@@ -29,8 +21,8 @@ type DockerImageInfo struct {
 // GlobalAccessController 全局访问控制器实例
 var GlobalAccessController = &AccessController{}
 
-// ParseDockerImage 解析Docker镜像名称
-func (ac *AccessController) ParseDockerImage(image string) DockerImageInfo {
+// parseDockerImage 解析Docker镜像名称
+func (ac *AccessController) parseDockerImage(image string) dockerImageInfo {
 	image = strings.TrimPrefix(image, "docker://")
 
 	var tag string
@@ -69,7 +61,7 @@ func (ac *AccessController) ParseDockerImage(image string) DockerImageInfo {
 
 	fullName := namespace + "/" + repository
 
-	return DockerImageInfo{
+	return dockerImageInfo{
 		Namespace:  namespace,
 		Repository: repository,
 		Tag:        tag,
@@ -81,7 +73,7 @@ func (ac *AccessController) ParseDockerImage(image string) DockerImageInfo {
 func (ac *AccessController) CheckDockerAccess(image string) (allowed bool, reason string) {
 	cfg := config.GetConfig()
 
-	imageInfo := ac.ParseDockerImage(image)
+	imageInfo := ac.parseDockerImage(image)
 
 	if len(cfg.Access.WhiteList) > 0 {
 		if !ac.matchImageInList(imageInfo, cfg.Access.WhiteList) {
@@ -118,7 +110,7 @@ func (ac *AccessController) CheckGitHubAccess(matches []string) (allowed bool, r
 }
 
 // matchImageInList 检查Docker镜像是否在指定列表中
-func (ac *AccessController) matchImageInList(imageInfo DockerImageInfo, list []string) bool {
+func (ac *AccessController) matchImageInList(imageInfo dockerImageInfo, list []string) bool {
 	fullName := strings.ToLower(imageInfo.FullName)
 	namespace := strings.ToLower(imageInfo.Namespace)
 

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -77,7 +76,7 @@ func parseCIDRList(items []string, name string) []*net.IPNet {
 			if _, ipnet, err := net.ParseCIDR(item); err == nil {
 				result = append(result, ipnet)
 			} else {
-				log.Printf("警告: 无效的%sIP格式: %s", name, item)
+				Logger().Warn("invalid IP format", "list", name, "ip", item)
 			}
 		}
 	}
@@ -150,17 +149,9 @@ func isIPInCIDRList(ip string, cidrList []*net.IPNet) bool {
 	return false
 }
 
-// shard 计算分片索引
+// shard 计算分片索引（启动时已全部初始化）
 func (i *IPRateLimiter) shardFor(ip string) *ipShard {
-	s := &i.shards[fnv32(ip)%ipShardCount]
-	if s.entries == nil {
-		s.mu.Lock()
-		if s.entries == nil {
-			s.entries = make(map[string]*rateLimiterEntry, 64)
-		}
-		s.mu.Unlock()
-	}
-	return s
+	return &i.shards[fnv32(ip)%ipShardCount]
 }
 
 // GetLimiter 获取指定 IP 的限流器

@@ -27,7 +27,7 @@ FROM alpine:3.22
 LABEL org.opencontainers.image.title="HubProxy" \
       org.opencontainers.image.description="Docker & GitHub 加速代理服务器" \
       org.opencontainers.image.source="https://github.com/787a68/hubproxy" \
-      org.opencontainers.image.licenses="GPL-3.0"
+      org.opencontainers.image.licenses="MIT"
 
 RUN adduser -D -u 1000 hubproxy && \
     apk add --no-cache wget

@@ -21,7 +21,7 @@ type CachedItem struct {
 }
 
 const (
-	cacheShards    = 64
+	cacheShards      = 64
 	cacheMaxPerShard = 512
 )
 

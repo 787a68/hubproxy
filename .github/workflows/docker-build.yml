@@ -1,15 +1,15 @@
-name: build-docker
+name: docker
 
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号 (例: v1.0.0)'
+        description: "版本号，留空则使用 UTC 日期，如 2026.07.06"
         required: false
-        default: ''
+        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -39,26 +39,16 @@ jobs:
       - name: 计算版本号（按当天日期，精确到天）
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "ver=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "ver=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            VERSION="${GITHUB_REF#refs/tags/}"
           else
-            echo "ver=$(date -u +%Y.%m.%d)" >> $GITHUB_OUTPUT
+            VERSION="$(date -u +%Y.%m.%d)"
           fi
-
-      - name: 提取元数据（标签和标签）
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-,format=short
-            type=raw,value=${{ steps.version.outputs.ver }}
-            type=raw,value=latest,enable={{is_default_branch}}
+          VERSION="${VERSION#v}"
+          echo "ver=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 构建并推送多架构镜像
         uses: docker/build-push-action@v6
@@ -67,11 +57,46 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.ver }}
+          labels: |
+            org.opencontainers.image.title=HubProxy
+            org.opencontainers.image.version=${{ steps.version.outputs.ver }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
             VERSION=${{ steps.version.outputs.ver }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
+          provenance: false
+          sbom: false
+
+      - name: 构建并推送 AMD64 镜像标签
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:linux-amd64
+          build-args: |
+            VERSION=${{ steps.version.outputs.ver }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
+      - name: 构建并推送 ARM64 镜像标签
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:linux-arm64
+          build-args: |
+            VERSION=${{ steps.version.outputs.ver }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false

@@ -48,8 +48,13 @@ func serveEmbedFile(c *gin.Context, filename string) {
 		return
 	}
 	contentType := "text/html; charset=utf-8"
-	if strings.HasSuffix(filename, ".ico") {
+	switch {
+	case strings.HasSuffix(filename, ".ico"):
 		contentType = "image/x-icon"
+	case strings.HasSuffix(filename, ".css"):
+		contentType = "text/css; charset=utf-8"
+	case strings.HasSuffix(filename, ".js"):
+		contentType = "application/javascript; charset=utf-8"
 	}
 	c.Data(http.StatusOK, contentType, data)
 }
@@ -160,9 +165,10 @@ func main() {
 	}
 
 	// 优雅关闭
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigChan
 		utils.Logger().Info("shutting down", "signal", sig.String())
 
