@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+name="hubproxy"
+description="Docker and GitHub acceleration proxy server"
+command="/usr/bin/hubproxy"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/hubproxy.log"
+error_log="/var/log/hubproxy.log"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=0
+
+export CONFIG_PATH="/etc/hubproxy/config.toml"
+
+depend() {
+    need net
+    after firewall
+}

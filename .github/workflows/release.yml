@@ -1,0 +1,174 @@
+name: 发布二进制文件
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空则取当天日期，如 2026.07.06）'
+        required: false
+        default: ''
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          
+      - name: 设置Go环境
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: "src/go.mod"
+          cache-dependency-path: "src/go.sum"
+          
+      - name: 获取版本号（留空取当天日期）
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(date -u +%Y.%m.%d)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "版本号: $VERSION"
+          
+      - name: 生成变更日志
+        id: changelog
+        run: |
+          # 获取上一个标签
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -n "$PREV_TAG" ]; then
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "## 更新内容" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            git log --pretty=format:"- %s" $PREV_TAG..HEAD >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "changelog=## 首次发布" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 创建构建目录
+        run: |
+          mkdir -p build/hubproxy
+          
+      - name: 安装 UPX
+        uses: crazy-max/ghaction-upx@v4
+        with:
+          install-only: true
+
+      - name: 安装 nFPM
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      - name: 编译二进制文件
+        run: |
+          cd src
+          VERSION=${{ steps.version.outputs.version }}
+          
+          # Linux AMD64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -o ../build/hubproxy/hubproxy-linux-amd64 .
+          
+          # Linux ARM64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -o ../build/hubproxy/hubproxy-linux-arm64 .
+          
+          # 压缩二进制文件
+          upx -9 ../build/hubproxy/hubproxy-linux-amd64
+          upx -9 ../build/hubproxy/hubproxy-linux-arm64
+          
+      - name: 准备压缩包文件
+        run: |
+          # 复制配置文件
+          cp src/config.toml build/hubproxy/
+          
+      - name: 创建压缩包
+        run: |
+          cd build
+          
+          # Linux AMD64 包
+          mkdir -p linux-amd64/hubproxy
+          cp hubproxy/hubproxy-linux-amd64 linux-amd64/hubproxy/hubproxy
+          cp hubproxy/config.toml linux-amd64/hubproxy/
+          tar -czf hubproxy-linux-amd64.tar.gz -C linux-amd64 hubproxy
+          
+          # Linux ARM64 包
+          mkdir -p linux-arm64/hubproxy
+          cp hubproxy/hubproxy-linux-arm64 linux-arm64/hubproxy/hubproxy
+          cp hubproxy/config.toml linux-arm64/hubproxy/
+          tar -czf hubproxy-linux-arm64.tar.gz -C linux-arm64 hubproxy
+          
+          # 列出生成的文件
+          ls -la *.tar.gz
+
+      - name: 创建Linux发行版安装包
+        run: |
+          mkdir -p build/packages
+          VERSION="${{ steps.version.outputs.version }}"
+          NFPM_VERSION="${VERSION#v}"
+
+          package() {
+            hubproxy_arch="$1"
+            nfpm_arch="$2"
+            packager="$3"
+            config="$4"
+            target="build/packages/hubproxy-linux-${hubproxy_arch}.${packager}"
+            temp_dir="build/packages/${hubproxy_arch}-${packager}"
+            binary="./build/hubproxy/hubproxy-linux-${hubproxy_arch}"
+
+            rm -rf "${temp_dir}"
+            mkdir -p "${temp_dir}"
+            rm -rf build/package-root
+            mkdir -p build/package-root
+            cp "${binary}" build/package-root/hubproxy
+            NFPM_ARCH="${nfpm_arch}" NFPM_VERSION="${NFPM_VERSION}" nfpm package --config "${config}" --packager "${packager}" --target "${temp_dir}/"
+            mv "${temp_dir}"/*.${packager} "${target}"
+            rm -rf "${temp_dir}"
+            rm -rf build/package-root
+          }
+
+          # AMD64 包
+          package amd64 amd64 deb packaging/nfpm.deb-rpm.yaml
+          package amd64 amd64 rpm packaging/nfpm.deb-rpm.yaml
+          package amd64 amd64 apk packaging/nfpm.apk.yaml
+
+          # ARM64 包
+          package arm64 arm64 deb packaging/nfpm.deb-rpm.yaml
+          package arm64 arm64 rpm packaging/nfpm.deb-rpm.yaml
+          package arm64 arm64 apk packaging/nfpm.apk.yaml
+
+          ls -la build/packages
+
+      - name: 检查安装包内容
+        run: |
+          dpkg-deb -c build/packages/hubproxy-linux-amd64.deb
+          rpm -qpl build/packages/hubproxy-linux-amd64.rpm
+          tar -tf build/packages/hubproxy-linux-amd64.apk
+          
+      - name: 创建或更新Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "HubProxy ${{ steps.version.outputs.version }}"
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+            
+            
+            ## 下载文件
+            
+            - **Linux AMD64**: `hubproxy-linux-amd64.tar.gz`
+            - **Linux ARM64**: `hubproxy-linux-arm64.tar.gz`
+            - **Debian/Ubuntu**: `.deb`
+            - **RHEL/CentOS/Fedora**: `.rpm`
+            - **Alpine Linux**: `.apk`
+            
+          files: |
+            build/*.tar.gz
+            build/packages/*
+          overwrite_files: true
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
