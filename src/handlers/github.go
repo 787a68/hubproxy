@@ -79,7 +79,7 @@ func GitHubProxyHandler(c *gin.Context) {
 		rawPath = strings.Replace(rawPath, "/blob/", "/raw/", 1)
 	}
 
-	ProxyGitHubRequest(c, rawPath)
+	proxyGitHubRequest(c, rawPath)
 }
 
 // CheckGitHubURL 检查URL是否匹配GitHub模式
@@ -92,8 +92,8 @@ func CheckGitHubURL(u string) []string {
 	return nil
 }
 
-// ProxyGitHubRequest 代理GitHub请求
-func ProxyGitHubRequest(c *gin.Context, u string) {
+// proxyGitHubRequest 代理GitHub请求
+func proxyGitHubRequest(c *gin.Context, u string) {
 	proxyGitHubWithRedirect(c, u, 0)
 }
 

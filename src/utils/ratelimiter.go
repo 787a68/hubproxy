@@ -18,6 +18,14 @@ const (
 	ipShardCount    = 64
 )
 
+// ipRule 单条 IP 限速规则
+type ipRule struct {
+	cidr    *net.IPNet
+	limit   rate.Limit
+	burst   int
+	blocked bool
+}
+
 // ipShard 分片限流器，独立锁降低争用
 type ipShard struct {
 	mu      sync.Mutex
@@ -26,12 +34,10 @@ type ipShard struct {
 
 // IPRateLimiter 分片 IP 限流器
 type IPRateLimiter struct {
-	shards           [ipShardCount]ipShard
-	r                rate.Limit
-	b                int
-	whitelist        []*net.IPNet
-	blacklist        []*net.IPNet
-	whitelistLimiter *rate.Limiter
+	shards [ipShardCount]ipShard
+	r      rate.Limit
+	b      int
+	rules  []ipRule
 }
 
 type rateLimiterEntry struct {
@@ -44,13 +50,33 @@ func InitGlobalLimiter() *IPRateLimiter {
 	cfg := config.GetConfig()
 
 	limiter := &IPRateLimiter{
-		r:                rate.Limit(float64(cfg.RateLimit.RequestLimit) / (cfg.RateLimit.PeriodHours * 3600)),
-		b:                cfg.RateLimit.RequestLimit,
-		whitelistLimiter: rate.NewLimiter(rate.Inf, cfg.RateLimit.RequestLimit),
+		r: rate.Limit(float64(cfg.RateLimit.RequestLimit) / (cfg.RateLimit.PeriodHours * 3600)),
+		b: cfg.RateLimit.RequestLimit,
 	}
 
-	limiter.whitelist = parseCIDRList(cfg.Security.WhiteList, "白名单")
-	limiter.blacklist = parseCIDRList(cfg.Security.BlackList, "黑名单")
+	// 解析 IPLimits 规则
+	for ipSpec, limit := range cfg.IPLimits {
+		rule := ipRule{}
+		if limit <= 0 {
+			rule.blocked = true
+		} else {
+			rule.limit = rate.Limit(float64(limit) / (cfg.RateLimit.PeriodHours * 3600))
+			rule.burst = limit
+		}
+		if _, ipnet, err := net.ParseCIDR(ipSpec); err == nil {
+			rule.cidr = ipnet
+		} else if ip := net.ParseIP(ipSpec); ip != nil {
+			if v4 := ip.To4(); v4 != nil {
+				rule.cidr = &net.IPNet{IP: v4, Mask: net.CIDRMask(32, 32)}
+			} else {
+				rule.cidr = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
+			}
+		} else {
+			Logger().Warn("invalid IP limit rule", "ip", ipSpec)
+			continue
+		}
+		limiter.rules = append(limiter.rules, rule)
+	}
 
 	for i := range limiter.shards {
 		limiter.shards[i].entries = make(map[string]*rateLimiterEntry, 64)
@@ -59,28 +85,6 @@ func InitGlobalLimiter() *IPRateLimiter {
 	go limiter.cleanupRoutine()
 
 	return limiter
-}
-
-// parseCIDRList 解析 CIDR/IP 列表
-func parseCIDRList(items []string, name string) []*net.IPNet {
-	result := make([]*net.IPNet, 0, len(items))
-	for _, item := range items {
-		if item = strings.TrimSpace(item); item != "" {
-			if !strings.Contains(item, "/") {
-				if strings.Contains(item, ":") {
-					item += "/128"
-				} else {
-					item += "/32"
-				}
-			}
-			if _, ipnet, err := net.ParseCIDR(item); err == nil {
-				result = append(result, ipnet)
-			} else {
-				Logger().Warn("invalid IP format", "list", name, "ip", item)
-			}
-		}
-	}
-	return result
 }
 
 // cleanupRoutine 定期清理过期条目
@@ -98,7 +102,6 @@ func (i *IPRateLimiter) cleanupRoutine() {
 					delete(shard.entries, ip)
 				}
 			}
-			// 超过上限时清空整个分片（避免单分片无限增长）
 			if len(shard.entries) > maxIPCacheSize/ipShardCount {
 				shard.entries = make(map[string]*rateLimiterEntry, 64)
 			}
@@ -116,17 +119,14 @@ func extractIP(address string) string {
 }
 
 // normalizeIPv6 将 IPv6 的接口标识符清零，归并到 /64 段
-// 返回独立副本，避免修改原始 IP 字节
 func normalizeIPv6(ipStr string) string {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return ipStr
 	}
-	// IPv4 直接返回
 	if v4 := ip.To4(); v4 != nil {
 		return ipStr
 	}
-	// IPv6：复制一份，避免修改 ParseIP 返回的底层数组
 	buf := make(net.IP, net.IPv6len)
 	copy(buf, ip.To16())
 	for j := 8; j < 16; j++ {
@@ -135,34 +135,27 @@ func normalizeIPv6(ipStr string) string {
 	return buf.String()
 }
 
-// isIPInCIDRList 检查 IP 是否在 CIDR 列表中
-func isIPInCIDRList(ip string, cidrList []*net.IPNet) bool {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return false
-	}
-	for _, cidr := range cidrList {
-		if cidr.Contains(parsed) {
-			return true
-		}
-	}
-	return false
-}
-
-// shard 计算分片索引（启动时已全部初始化）
+// shard 计算分片索引
 func (i *IPRateLimiter) shardFor(ip string) *ipShard {
 	return &i.shards[fnv32(ip)%ipShardCount]
 }
 
-// GetLimiter 获取指定 IP 的限流器
-func (i *IPRateLimiter) GetLimiter(ip string) (*rate.Limiter, bool) {
-	if isIPInCIDRList(ip, i.blacklist) {
-		return nil, false
+// matchRule 检查 IP 是否匹配自定义规则，返回 (limit, burst, blocked, matched)
+func (i *IPRateLimiter) matchRule(ip string) (rate.Limit, int, bool, bool) {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return 0, 0, false, false
 	}
-	if isIPInCIDRList(ip, i.whitelist) {
-		return i.whitelistLimiter, true
+	for _, rule := range i.rules {
+		if rule.cidr != nil && rule.cidr.Contains(parsed) {
+			return rule.limit, rule.burst, rule.blocked, true
+		}
 	}
+	return 0, 0, false, false
+}
 
+// GetLimiter 获取指定 IP 的限流器，返回 nil 表示阻断
+func (i *IPRateLimiter) GetLimiter(ip string) *rate.Limiter {
 	normalized := normalizeIPv6(ip)
 	shard := i.shardFor(normalized)
 	now := time.Now()
@@ -172,16 +165,27 @@ func (i *IPRateLimiter) GetLimiter(ip string) (*rate.Limiter, bool) {
 	if ok {
 		entry.lastAccess = now
 		shard.mu.Unlock()
-		return entry.limiter, true
+		return entry.limiter
+	}
+
+	// 首次访问时确定限流参数
+	r, b := i.r, i.b
+	if limit, burst, blocked, matched := i.matchRule(ip); matched {
+		if blocked {
+			shard.entries[normalized] = &rateLimiterEntry{limiter: nil, lastAccess: now}
+			shard.mu.Unlock()
+			return nil
+		}
+		r, b = limit, burst
 	}
 
 	entry = &rateLimiterEntry{
-		limiter:    rate.NewLimiter(i.r, i.b),
+		limiter:    rate.NewLimiter(r, b),
 		lastAccess: now,
 	}
 	shard.entries[normalized] = entry
 	shard.mu.Unlock()
-	return entry.limiter, true
+	return entry.limiter
 }
 
 // RateLimitMiddleware 速率限制中间件
@@ -209,8 +213,8 @@ func RateLimitMiddleware(limiter *IPRateLimiter) gin.HandlerFunc {
 		}
 		ip = extractIP(ip)
 
-		ipLimiter, allowed := limiter.GetLimiter(ip)
-		if !allowed {
+		ipLimiter := limiter.GetLimiter(ip)
+		if ipLimiter == nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": "您已被限制访问"})
 			c.Abort()
 			return

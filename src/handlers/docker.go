@@ -39,11 +39,9 @@ func handleRegistryRequest(c *gin.Context, pathWithoutV2 string) {
 	var imageRef string
 	var options []remote.Option
 
-	if domain, remaining := detectRegistryDomain(c, pathWithoutV2); domain != "" {
+	if domain, remaining := detectRegistryDomain(pathWithoutV2); domain != "" {
 		if mapping, ok := getRegistryMapping(domain); ok {
 			c.Set("target_registry_domain", domain)
-			c.Set("target_path", remaining)
-			// 重新在上游 path 上解析
 			imgName, _, _ := parseRegistryPath(remaining)
 			if !checkDockerAccess(c, domain+"/"+imgName) {
 				return
@@ -63,8 +61,8 @@ func handleRegistryRequest(c *gin.Context, pathWithoutV2 string) {
 		if !checkDockerAccess(c, imageName) {
 			return
 		}
-		imageRef = fmt.Sprintf("%s/%s", dockerProxy.registry.Name(), imageName)
-		options = dockerProxy.options
+		imageRef = fmt.Sprintf("%s/%s", dockerHubRegistry, imageName)
+		options = dockerHubOptions
 	}
 
 	switch apiType {
@@ -237,39 +235,23 @@ func parseReference(imageRef, reference string) (name.Reference, error) {
 
 // ===== Docker Hub 默认代理 =====
 
-type DockerProxy struct {
-	registry name.Registry
-	options  []remote.Option
-}
+const dockerHubRegistry = "registry-1.docker.io"
 
-var dockerProxy *DockerProxy
+var dockerHubOptions []remote.Option
 
 func InitDockerProxy() {
-	registry, err := name.NewRegistry("registry-1.docker.io")
-	if err != nil {
-		utils.Logger().Error("create docker registry failed", "err", err)
-		return
-	}
-	dockerProxy = &DockerProxy{
-		registry: registry,
-		options: []remote.Option{
-			remote.WithAuth(authn.Anonymous),
-			remote.WithUserAgent("hubproxy/go-containerregistry"),
-			remote.WithTransport(utils.GetGlobalHTTPClient().Transport),
-		},
+	dockerHubOptions = []remote.Option{
+		remote.WithAuth(authn.Anonymous),
+		remote.WithUserAgent("hubproxy/go-containerregistry"),
+		remote.WithTransport(utils.GetGlobalHTTPClient().Transport),
 	}
 }
 
 // ===== 多 Registry 检测 =====
 
 // detectRegistryDomain 检测 Registry 域名
-func detectRegistryDomain(c *gin.Context, path string) (string, string) {
+func detectRegistryDomain(path string) (string, string) {
 	cfg := config.GetConfig()
-	if ns := c.Query("ns"); ns != "" {
-		if mapping, exists := cfg.Registries[ns]; exists && mapping.Enabled {
-			return ns, path
-		}
-	}
 	for domain := range cfg.Registries {
 		if strings.HasPrefix(path, domain+"/") {
 			return domain, strings.TrimPrefix(path, domain+"/")
@@ -298,10 +280,10 @@ func createUpstreamOptions(mapping config.RegistryMapping) []remote.Option {
 
 // ProxyDockerAuthGin Docker 认证代理
 func ProxyDockerAuthGin(c *gin.Context) {
-	if utils.IsTokenCacheEnabled() {
+	if utils.IsCacheEnabled() {
 		proxyDockerAuthWithCache(c)
 	} else {
-		proxyDockerAuthOriginal(c)
+		proxyDockerAuthOriginalWithDomain(c, detectAuthTargetDomain(c))
 	}
 }
 
@@ -338,10 +320,6 @@ func (r *ResponseRecorder) WriteHeader(code int) { r.statusCode = code }
 func (r *ResponseRecorder) Write(data []byte) (int, error) {
 	r.body = append(r.body, data...)
 	return len(data), nil
-}
-
-func proxyDockerAuthOriginal(c *gin.Context) {
-	proxyDockerAuthOriginalWithDomain(c, detectAuthTargetDomain(c))
 }
 
 func proxyDockerAuthOriginalWithDomain(c *gin.Context, targetDomain string) {
@@ -419,11 +397,6 @@ func buildAuthURL(authHost, requestPath string) string {
 }
 
 func detectAuthTargetDomain(c *gin.Context) string {
-	if ns := c.Query("ns"); ns != "" {
-		if _, ok := getRegistryMapping(ns); ok {
-			return ns
-		}
-	}
 	service := c.Query("service")
 	if _, ok := getRegistryMapping(service); ok {
 		return service

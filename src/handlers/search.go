@@ -84,20 +84,20 @@ const (
 	cacheTTL     = 30 * time.Minute
 )
 
-type Cache struct {
+type SearchCache struct {
 	data    map[string]cacheEntry
 	mu      sync.RWMutex
 	maxSize int
 }
 
 var (
-	searchCache = &Cache{
+	searchCache = &SearchCache{
 		data:    make(map[string]cacheEntry),
 		maxSize: maxCacheSize,
 	}
 )
 
-func (c *Cache) Get(key string) (interface{}, bool) {
+func (c *SearchCache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
 	entry, exists := c.data[key]
 	c.mu.RUnlock()
@@ -116,11 +116,11 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 	return entry.data, true
 }
 
-func (c *Cache) Set(key string, data interface{}) {
+func (c *SearchCache) Set(key string, data interface{}) {
 	c.SetWithTTL(key, data, cacheTTL)
 }
 
-func (c *Cache) SetWithTTL(key string, data interface{}, ttl time.Duration) {
+func (c *SearchCache) SetWithTTL(key string, data interface{}, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -139,13 +139,13 @@ func (c *Cache) SetWithTTL(key string, data interface{}, ttl time.Duration) {
 	}
 }
 
-func (c *Cache) Cleanup() {
+func (c *SearchCache) Cleanup() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cleanupExpiredLocked()
 }
 
-func (c *Cache) cleanupExpiredLocked() {
+func (c *SearchCache) cleanupExpiredLocked() {
 	now := time.Now()
 	for key, entry := range c.data {
 		if now.After(entry.expiresAt) {
@@ -154,7 +154,7 @@ func (c *Cache) cleanupExpiredLocked() {
 	}
 }
 
-func (c *Cache) evictOldestLocked() {
+func (c *SearchCache) evictOldestLocked() {
 	var oldestKey string
 	var oldest time.Time
 	for key, entry := range c.data {
@@ -203,15 +203,22 @@ func normalizeRepository(repo *Repository) {
 	}
 }
 
-// searchDockerHub 搜索镜像
 func searchDockerHub(ctx context.Context, query string, page, pageSize int) (*SearchResult, error) {
-	return searchDockerHubWithDepth(ctx, query, page, pageSize, 0)
+	result, err := searchDockerHubDirect(ctx, query, page, pageSize)
+	if err != nil || (result != nil && len(result.Results) > 0) {
+		return result, err
+	}
+	// 回退：含 "/" 时去掉 namespace 重搜
+	if strings.Contains(query, "/") {
+		parts := strings.Split(query, "/")
+		if len(parts) == 2 {
+			return searchDockerHubDirect(ctx, parts[1], page, pageSize)
+		}
+	}
+	return result, err
 }
 
-func searchDockerHubWithDepth(ctx context.Context, query string, page, pageSize int, depth int) (*SearchResult, error) {
-	if depth > 1 {
-		return nil, fmt.Errorf("搜索请求过于复杂，请尝试更具体的关键词")
-	}
+func searchDockerHubDirect(ctx context.Context, query string, page, pageSize int) (*SearchResult, error) {
 	cacheKey := fmt.Sprintf("search:%s:%d:%d", query, page, pageSize)
 
 	if cached, ok := searchCache.Get(cacheKey); ok {
@@ -266,9 +273,6 @@ func searchDockerHubWithDepth(ctx context.Context, query string, page, pageSize 
 		case http.StatusTooManyRequests:
 			return nil, fmt.Errorf("请求过于频繁，请稍后重试")
 		case http.StatusNotFound:
-			if isUserRepo && namespace != "" {
-				return searchDockerHubWithDepth(ctx, repoName, page, pageSize, depth+1)
-			}
 			return nil, fmt.Errorf("未找到相关镜像")
 		case http.StatusBadGateway, http.StatusServiceUnavailable:
 			return nil, fmt.Errorf("docker hub 服务暂时不可用，请稍后重试")
@@ -302,10 +306,6 @@ func searchDockerHubWithDepth(ctx context.Context, query string, page, pageSize 
 				normalizeRepository(&repo)
 				result.Results = append(result.Results, repo)
 			}
-		}
-
-		if len(result.Results) == 0 {
-			return searchDockerHubWithDepth(ctx, repoName, page, pageSize, depth+1)
 		}
 
 		result.Count = len(result.Results)

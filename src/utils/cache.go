@@ -186,11 +186,6 @@ func IsCacheEnabled() bool {
 	return config.GetConfig().TokenCache.Enabled
 }
 
-// IsTokenCacheEnabled 检查 token 缓存是否启用
-func IsTokenCacheEnabled() bool {
-	return IsCacheEnabled()
-}
-
 // initMap 首次访问时惰性初始化分片 map（避免 init 锁开销）
 var cacheInit sync.Once
 

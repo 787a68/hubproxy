@@ -35,10 +35,8 @@ type AppConfig struct {
 		PeriodHours  float64 `toml:"periodHours"`
 	} `toml:"rateLimit"`
 
-	Security struct {
-		WhiteList []string `toml:"whiteList"`
-		BlackList []string `toml:"blackList"`
-	} `toml:"security"`
+	// IPLimits 按 IP/CIDR 指定独立限速，值为每周期请求数，0 表示阻断
+	IPLimits map[string]int `toml:"ipLimits"`
 
 	Access struct {
 		WhiteList []string `toml:"whiteList"`
@@ -90,13 +88,7 @@ func DefaultConfig() *AppConfig {
 			RequestLimit: 500,
 			PeriodHours:  3.0,
 		},
-		Security: struct {
-			WhiteList []string `toml:"whiteList"`
-			BlackList []string `toml:"blackList"`
-		}{
-			WhiteList: []string{},
-			BlackList: []string{},
-		},
+		IPLimits: map[string]int{},
 		Access: struct {
 			WhiteList []string `toml:"whiteList"`
 			BlackList []string `toml:"blackList"`
@@ -229,13 +221,6 @@ func overrideFromEnv(cfg *AppConfig) {
 	envInt64("MAX_FILE_SIZE", &cfg.Server.FileSize, 1)
 	envInt("RATE_LIMIT", &cfg.RateLimit.RequestLimit, 1)
 	envFloat("RATE_PERIOD_HOURS", &cfg.RateLimit.PeriodHours, 0)
-
-	if val := os.Getenv("IP_WHITELIST"); val != "" {
-		cfg.Security.WhiteList = append(cfg.Security.WhiteList, strings.Split(val, ",")...)
-	}
-	if val := os.Getenv("IP_BLACKLIST"); val != "" {
-		cfg.Security.BlackList = append(cfg.Security.BlackList, strings.Split(val, ",")...)
-	}
 
 	if val, ok := os.LookupEnv("ACCESS_PROXY"); ok {
 		cfg.Access.Proxy = strings.TrimSpace(val)

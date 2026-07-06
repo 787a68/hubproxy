@@ -5,11 +5,6 @@ on:
     branches: [main, master]
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号，留空则使用 UTC 日期，如 2026.07.06"
-        required: false
-        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -39,10 +34,7 @@ jobs:
       - name: 计算版本号（按当天日期，精确到天）
         id: version
         run: |
-          INPUT_VERSION="${{ github.event.inputs.version }}"
-          if [ -n "$INPUT_VERSION" ]; then
-            VERSION="$INPUT_VERSION"
-          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
           else
             VERSION="$(date -u +%Y.%m.%d)"
@@ -78,7 +70,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:linux-amd64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
           build-args: |
             VERSION=${{ steps.version.outputs.ver }}
           cache-from: type=gha
@@ -93,7 +85,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:linux-arm64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
           build-args: |
             VERSION=${{ steps.version.outputs.ver }}
           cache-from: type=gha

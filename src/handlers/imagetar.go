@@ -102,16 +102,11 @@ func generateContentFingerprint(images []string, platform string) string {
 
 // getUserID 获取用户标识
 func getUserID(c *gin.Context) string {
-	if sessionID, err := c.Cookie("session_id"); err == nil && sessionID != "" {
-		return "session:" + sessionID
-	}
-
 	ip := c.ClientIP()
 	userAgent := c.GetHeader("User-Agent")
 	if userAgent == "" {
 		userAgent = "unknown"
 	}
-
 	combined := ip + ":" + userAgent
 	hash := md5.Sum([]byte(combined))
 	return "ip:" + hex.EncodeToString(hash[:8])
@@ -279,22 +274,6 @@ func (is *ImageStreamer) resolveImage(ctx context.Context, imageRef string, opti
 	}
 }
 
-// StreamImageToWriter 流式下载镜像到Writer
-func (is *ImageStreamer) StreamImageToWriter(ctx context.Context, imageRef string, writer io.Writer, options *StreamOptions) error {
-	if options == nil {
-		options = &StreamOptions{UseCompressedLayers: true}
-	}
-
-	utils.Logger().Info("downloading image", "ref", imageRef)
-
-	img, err := is.resolveImage(ctx, imageRef, options)
-	if err != nil {
-		return err
-	}
-
-	return is.streamImageLayers(ctx, img, writer, options, imageRef)
-}
-
 func setDownloadHeaders(c *gin.Context, filename string, compressed bool) {
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
@@ -315,7 +294,14 @@ func (is *ImageStreamer) StreamImageToGin(ctx context.Context, imageRef string, 
 	filename := strings.ReplaceAll(imageRef, "/", "_") + ".tar"
 	setDownloadHeaders(c, filename, options.Compression)
 
-	return is.StreamImageToWriter(ctx, imageRef, c.Writer, options)
+	utils.Logger().Info("downloading image", "ref", imageRef)
+
+	img, err := is.resolveImage(ctx, imageRef, options)
+	if err != nil {
+		return err
+	}
+
+	return is.streamImageLayers(ctx, img, c.Writer, options, imageRef)
 }
 
 // streamMultiArchImage 处理多架构镜像

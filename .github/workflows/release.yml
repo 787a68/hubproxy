@@ -2,13 +2,9 @@ name: release
 
 on:
   push:
+    branches: [main, master]
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号，留空则使用 UTC 日期，如 2026.07.06"
-        required: false
-        default: ""
 
 jobs:
   build-and-release:
@@ -31,13 +27,10 @@ jobs:
       - name: 获取版本号
         id: version
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          if [ -z "$VERSION" ]; then
-            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-              VERSION="${GITHUB_REF#refs/tags/}"
-            else
-              VERSION="$(date -u +%Y.%m.%d)"
-            fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="$(date -u +%Y.%m.%d)"
           fi
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
