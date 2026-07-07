@@ -3,7 +3,6 @@ name: docker
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
   workflow_dispatch:
 
 env:
@@ -31,18 +30,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 计算版本号（按当天日期，精确到天）
+      - name: 计算版本号
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="$(date -u +%Y.%m.%d)"
-          fi
-          VERSION="${VERSION#v}"
+          VERSION="$(date -u +%Y.%m.%d)"
           echo "ver=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 构建并推送多架构镜像
+      - name: 构建并推送镜像
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -52,40 +46,12 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.ver }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
           labels: |
             org.opencontainers.image.title=HubProxy
             org.opencontainers.image.version=${{ steps.version.outputs.ver }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          build-args: |
-            VERSION=${{ steps.version.outputs.ver }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
-
-      - name: 构建并推送 AMD64 镜像标签
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:amd64
-          build-args: |
-            VERSION=${{ steps.version.outputs.ver }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-          sbom: false
-
-      - name: 构建并推送 ARM64 镜像标签
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:arm64
           build-args: |
             VERSION=${{ steps.version.outputs.ver }}
           cache-from: type=gha

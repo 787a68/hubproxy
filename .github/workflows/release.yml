@@ -3,7 +3,6 @@ name: release
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -27,12 +26,7 @@ jobs:
       - name: 获取版本号
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="$(date -u +%Y.%m.%d)"
-          fi
-          VERSION="${VERSION#v}"
+          VERSION="$(date -u +%Y.%m.%d)"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "版本号: $VERSION"
           

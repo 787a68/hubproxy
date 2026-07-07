@@ -3,24 +3,21 @@
 host = "0.0.0.0"
 # 监听端口
 port = 5000
-# Github文件大小限制（字节），默认2GB
-fileSize = 2147483648
+# Github文件大小限制（字节），默认1GB
+fileSize = 1073741824
 # HTTP/2 多路复用
-enableH2C = false
+enableH2C = true
 enableFrontend = true
 
-[rateLimit]
-# 每个IP每周期允许的请求数
-requestLimit = 500
-# 限流周期（小时）
-periodHours = 3.0
-
-# 按 IP/CIDR 指定独立限速，值为每周期请求数，0 表示阻断
+# 限速规则，格式 "ip periodHours requestLimit"
+# "*" 为全局，其他为按 IP/CIDR 覆盖，requestLimit=0 表示阻断
 # 示例：
-# [ipLimits]
-# "192.168.1.100" = 1000
-# "10.0.0.0/8" = 200
-# "172.16.0.1" = 0
+# ipLimits = [
+#     "* 1 100",
+#     "10.0.0.0/8 1 200",
+#     "172.16.0.1 0 0",
+# ]
+ipLimits = ["* 1 100"]
 
 [access]
 # 代理服务白名单（支持GitHub仓库和Docker镜像，支持通配符）

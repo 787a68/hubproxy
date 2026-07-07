@@ -140,8 +140,7 @@ func main() {
 
 	utils.Logger().Info("starting hubproxy",
 		"addr", fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		"rate_limit", cfg.RateLimit.RequestLimit,
-		"period_hours", cfg.RateLimit.PeriodHours,
+		"ip_limits", cfg.IPLimits,
 		"h2c", cfg.Server.EnableH2C,
 		"version", AppVersion(),
 	)

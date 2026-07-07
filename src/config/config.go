@@ -20,6 +20,12 @@ type RegistryMapping struct {
 	Enabled  bool   `toml:"enabled"`
 }
 
+// RateRule 单条限速规则
+type RateRule struct {
+	PeriodHours  float64
+	RequestLimit int
+}
+
 // AppConfig 应用配置结构体（不可变快照，加载后通过 atomic.Value 发布）
 type AppConfig struct {
 	Server struct {
@@ -30,13 +36,9 @@ type AppConfig struct {
 		EnableFrontend bool   `toml:"enableFrontend"`
 	} `toml:"server"`
 
-	RateLimit struct {
-		RequestLimit int     `toml:"requestLimit"`
-		PeriodHours  float64 `toml:"periodHours"`
-	} `toml:"rateLimit"`
-
-	// IPLimits 按 IP/CIDR 指定独立限速，值为每周期请求数，0 表示阻断
-	IPLimits map[string]int `toml:"ipLimits"`
+	// IPLimits 限速规则列表，格式 "ip periodHours requestLimit"
+	// "*" 为全局，其他为按 IP/CIDR 覆盖，requestLimit=0 表示阻断
+	IPLimits []string `toml:"ipLimits"`
 
 	Access struct {
 		WhiteList []string `toml:"whiteList"`
@@ -77,18 +79,11 @@ func DefaultConfig() *AppConfig {
 		}{
 			Host:           "0.0.0.0",
 			Port:           5000,
-			FileSize:       2 * 1024 * 1024 * 1024,
-			EnableH2C:      false,
+			FileSize:       1 * 1024 * 1024 * 1024,
+			EnableH2C:      true,
 			EnableFrontend: true,
 		},
-		RateLimit: struct {
-			RequestLimit int     `toml:"requestLimit"`
-			PeriodHours  float64 `toml:"periodHours"`
-		}{
-			RequestLimit: 500,
-			PeriodHours:  3.0,
-		},
-		IPLimits: map[string]int{},
+		IPLimits: []string{"* 1 100"},
 		Access: struct {
 			WhiteList []string `toml:"whiteList"`
 			BlackList []string `toml:"blackList"`
@@ -216,16 +211,43 @@ func overrideFromEnv(cfg *AppConfig) {
 			cfg.Server.Port = port
 		}
 	}
-	envBool("ENABLE_H2C", &cfg.Server.EnableH2C)
-	envBool("ENABLE_FRONTEND", &cfg.Server.EnableFrontend)
-	envInt64("MAX_FILE_SIZE", &cfg.Server.FileSize, 1)
-	envInt("RATE_LIMIT", &cfg.RateLimit.RequestLimit, 1)
-	envFloat("RATE_PERIOD_HOURS", &cfg.RateLimit.PeriodHours, 0)
+	envBool("H2C", &cfg.Server.EnableH2C)
+	envBool("FRONTEND", &cfg.Server.EnableFrontend)
+	envInt64("FILE_SIZE", &cfg.Server.FileSize, 1)
 
-	if val, ok := os.LookupEnv("ACCESS_PROXY"); ok {
+	if val := os.Getenv("PROXY"); val != "" {
 		cfg.Access.Proxy = strings.TrimSpace(val)
 	}
+	if val := os.Getenv("WHITELIST"); val != "" {
+		cfg.Access.WhiteList = strings.Split(val, ",")
+	}
+	if val := os.Getenv("BLACKLIST"); val != "" {
+		cfg.Access.BlackList = strings.Split(val, ",")
+	}
 	envInt("MAX_IMAGES", &cfg.Download.MaxImages, 1)
+
+	envBool("CACHE", &cfg.TokenCache.Enabled)
+	if val := os.Getenv("CACHE_TTL"); val != "" {
+		cfg.TokenCache.DefaultTTL = val
+	}
+
+	if val := os.Getenv("IP_LIMITS"); val != "" {
+		cfg.IPLimits = strings.Split(val, ",")
+	}
+}
+
+// ParseIPLimit 解析单条限速规则 "ip periodHours requestLimit"
+func ParseIPLimit(rule string) (ipSpec string, r RateRule, ok bool) {
+	fields := strings.Fields(rule)
+	if len(fields) != 3 {
+		return "", RateRule{}, false
+	}
+	period, err1 := strconv.ParseFloat(fields[1], 64)
+	limit, err2 := strconv.Atoi(fields[2])
+	if err1 != nil || err2 != nil {
+		return "", RateRule{}, false
+	}
+	return fields[0], RateRule{PeriodHours: period, RequestLimit: limit}, true
 }
 
 func envBool(key string, dst *bool) {
@@ -247,14 +269,6 @@ func envInt(key string, dst *int, minVal int) {
 func envInt64(key string, dst *int64, minVal int64) {
 	if val := os.Getenv(key); val != "" {
 		if v, err := strconv.ParseInt(val, 10, 64); err == nil && v >= minVal {
-			*dst = v
-		}
-	}
-}
-
-func envFloat(key string, dst *float64, minVal float64) {
-	if val := os.Getenv(key); val != "" {
-		if v, err := strconv.ParseFloat(val, 64); err == nil && v >= minVal {
 			*dst = v
 		}
 	}
