@@ -117,7 +117,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 
 	ref, err := parseReference(imageRef, reference)
 	if err != nil {
-		utils.Logger().Warn("parse reference failed", "ref", imageRef, "err", err)
+		utils.Logger().Debug("parse reference failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid reference")
 		return
 	}
@@ -125,7 +125,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 	if c.Request.Method == http.MethodHead {
 		desc, err := remote.Head(ref, options...)
 		if err != nil {
-			utils.Logger().Warn("head manifest failed", "ref", imageRef, "err", err)
+			utils.Logger().Debug("head manifest failed", "ref", imageRef, "err", err)
 			c.String(http.StatusNotFound, "Manifest not found")
 			return
 		}
@@ -138,7 +138,7 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 
 	desc, err := remote.Get(ref, options...)
 	if err != nil {
-		utils.Logger().Warn("get manifest failed", "ref", imageRef, "err", err)
+		utils.Logger().Debug("get manifest failed", "ref", imageRef, "err", err)
 		c.String(http.StatusNotFound, "Manifest not found")
 		return
 	}
@@ -164,14 +164,14 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string, options [
 func handleBlobRequest(c *gin.Context, imageRef, digest string, options []remote.Option) {
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
-		utils.Logger().Warn("parse digest failed", "ref", imageRef, "err", err)
+		utils.Logger().Debug("parse digest failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid digest reference")
 		return
 	}
 
 	layer, err := remote.Layer(digestRef, options...)
 	if err != nil {
-		utils.Logger().Warn("get layer failed", "ref", imageRef, "digest", digest, "err", err)
+		utils.Logger().Debug("get layer failed", "ref", imageRef, "digest", digest, "err", err)
 		c.String(http.StatusNotFound, "Layer not found")
 		return
 	}
@@ -207,14 +207,14 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string, options []remote
 func handleTagsRequest(c *gin.Context, imageRef string, options []remote.Option) {
 	repo, err := name.NewRepository(imageRef)
 	if err != nil {
-		utils.Logger().Warn("parse repository failed", "ref", imageRef, "err", err)
+		utils.Logger().Debug("parse repository failed", "ref", imageRef, "err", err)
 		c.String(http.StatusBadRequest, "Invalid repository")
 		return
 	}
 
 	tags, err := remote.List(repo, options...)
 	if err != nil {
-		utils.Logger().Warn("list tags failed", "ref", imageRef, "err", err)
+		utils.Logger().Debug("list tags failed", "ref", imageRef, "err", err)
 		c.String(http.StatusNotFound, "Tags not found")
 		return
 	}
@@ -357,7 +357,7 @@ func proxyDockerAuthOriginalWithDomain(c *gin.Context, targetDomain string) {
 
 	proxyHost := c.Request.Host
 	if proxyHost == "" {
-		proxyHost = fmt.Sprintf("localhost:%d", config.GetConfig().Server.Port)
+		proxyHost = config.GetConfig().Server.Addr
 	}
 	scheme := c.GetHeader("X-Forwarded-Proto")
 	if scheme == "" {

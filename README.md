@@ -107,8 +107,7 @@ curl http://127.0.0.1:5000/metrics
 
 | 配置文件 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `[server] host` | `SERVER_HOST` | `0.0.0.0` | 监听地址 |
-| `[server] port` | `SERVER_PORT` | `5000` | 监听端口 |
+| `[server] addr` | `ADDR` | `0.0.0.0:5000` | 监听地址 |
 | `[server] fileSize` | `FILE_SIZE` | `1073741824` | GitHub 文件大小限制（字节），1GB |
 | `[server] enableH2C` | `H2C` | `true` | 启用 HTTP/2 cleartext |
 | `[server] enableFrontend` | `FRONTEND` | `true` | 启用前端页面 |
@@ -121,7 +120,7 @@ curl http://127.0.0.1:5000/metrics
 
 ```toml
 ipLimits = [
-    "* 1 100",
+    "* 3 500",
     "10.0.0.0/8 1 200",
     "172.16.0.1 0 0",
 ]
@@ -130,7 +129,7 @@ ipLimits = [
 环境变量：
 
 ```bash
-IP_LIMITS="* 1 100,10.0.0.0/8 1 200,172.16.0.1 0 0"
+IP_LIMITS="* 3 500,10.0.0.0/8 1 200,172.16.0.1 0 0"
 ```
 
 ### 仓库审计
@@ -158,9 +157,10 @@ IP_LIMITS="* 1 100,10.0.0.0/8 1 200,172.16.0.1 0 0"
 
 ### 其他
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `CONFIG_PATH` | `config.toml` | 配置文件路径 |
+| 配置文件 | 环境变量 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `logLevel` | `LOG_LEVEL` | `info` | 日志等级：`debug`/`info`/`warn`/`error` |
+| — | `CONFIG_PATH` | `config.toml` | 配置文件路径 |
 
 ### Registry 映射
 

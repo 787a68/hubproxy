@@ -11,7 +11,6 @@ import (
 const requestIDHeader = "X-Request-ID"
 
 // RequestIDMiddleware 注入请求 ID（用于日志关联）
-// 复用客户端传入的 ID；缺失时生成 16 字节随机 hex
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.GetHeader(requestIDHeader)
@@ -36,8 +35,11 @@ func GetRequestID(c *gin.Context) string {
 	return "-"
 }
 
-// RequestLogger 替代 gin.Logger，按结构化格式记录请求
-// 仅记录慢请求（>= slowThreshold）和错误状态码，避免每请求日志开销
+// RequestLogger 请求日志中间件
+// Debug: 记录所有请求
+// Info: 仅记录慢请求
+// Warn: 记录 4xx 客户端错误
+// Error: 记录 5xx 服务端错误
 func RequestLogger(slowThreshold time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		GlobalMetrics.RequestsTotal.Add(1)
@@ -49,18 +51,25 @@ func RequestLogger(slowThreshold time.Duration) gin.HandlerFunc {
 			GlobalMetrics.RequestsErrors.Add(1)
 		}
 
-		// 仅记录异常情况（错误或慢）
-		if status >= 400 || latency >= slowThreshold {
-			ip := extractIP(c.ClientIP())
-			logf().Info("request",
-				"req_id", GetRequestID(c),
-				"method", c.Request.Method,
-				"path", c.Request.URL.Path,
-				"status", status,
-				"latency", latency.String(),
-				"ip", ip,
-				"size", c.Writer.Size(),
-			)
+		reqFields := []any{
+			"req_id", GetRequestID(c),
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", status,
+			"latency", latency.String(),
+			"ip", extractIP(c.ClientIP()),
+			"size", c.Writer.Size(),
+		}
+
+		switch {
+		case status >= 500:
+			logf().Error("request", reqFields...)
+		case status >= 400:
+			logf().Warn("request", reqFields...)
+		case latency >= slowThreshold:
+			logf().Info("request", reqFields...)
+		default:
+			logf().Debug("request", reqFields...)
 		}
 	}
 }

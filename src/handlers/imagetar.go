@@ -328,7 +328,7 @@ func (is *ImageStreamer) streamImageLayers(ctx context.Context, img v1.Image, wr
 		return fmt.Errorf("获取镜像层失败: %w", err)
 	}
 
-	utils.Logger().Info("image layers", "count", len(layers))
+	utils.Logger().Debug("image layers", "count", len(layers))
 
 	return is.streamDockerFormatWithReturn(ctx, tarWriter, img, layers, configFile, imageRef, nil, nil, options)
 }
@@ -426,7 +426,7 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 			return err
 		}
 
-		utils.Logger().Info("layer processed", "index", i+1, "total", len(layers))
+		utils.Logger().Debug("layer processed", "index", i+1, "total", len(layers))
 	}
 
 	singleManifest := map[string]interface{}{
@@ -507,7 +507,7 @@ func (is *ImageStreamer) processImageForBatch(ctx context.Context, img v1.Image,
 		return nil, nil, fmt.Errorf("获取镜像配置失败: %w", err)
 	}
 
-	utils.Logger().Info("image layers", "count", len(layers))
+	utils.Logger().Debug("image layers", "count", len(layers))
 
 	var manifest map[string]interface{}
 	var repositories map[string]map[string]string
@@ -911,7 +911,7 @@ func (is *ImageStreamer) StreamMultipleImages(ctx context.Context, imageRefs []s
 		default:
 		}
 
-		utils.Logger().Info("processing image", "index", i+1, "total", len(imageRefs), "image", imageRef)
+		utils.Logger().Debug("processing image", "index", i+1, "total", len(imageRefs), "image", imageRef)
 
 		timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		manifest, repositories, err := is.streamSingleImageForBatch(timeoutCtx, tarWriter, imageRef, options)

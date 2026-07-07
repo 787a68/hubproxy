@@ -1,30 +1,31 @@
-[server]
 # 可通过 CONFIG_PATH 环境变量指定配置文件路径，默认读取当前工作目录下的 config.toml
-host = "0.0.0.0"
-# 监听端口
-port = 5000
-# Github文件大小限制（字节），默认1GB
+
+[server]
+# 监听地址
+addr = "0.0.0.0:5000"
+# GitHub 文件大小限制（字节），默认 1GB
 fileSize = 1073741824
-# HTTP/2 多路复用
+# HTTP/2 cleartext
 enableH2C = true
+# 启用前端页面
 enableFrontend = true
 
 # 限速规则，格式 "ip periodHours requestLimit"
 # "*" 为全局，其他为按 IP/CIDR 覆盖，requestLimit=0 表示阻断
 # 示例：
 # ipLimits = [
-#     "* 1 100",
+#     "* 3 500",
 #     "10.0.0.0/8 1 200",
 #     "172.16.0.1 0 0",
 # ]
-ipLimits = ["* 1 100"]
+ipLimits = ["* 3 500"]
 
 [access]
-# 代理服务白名单（支持GitHub仓库和Docker镜像，支持通配符）
+# 仓库白名单（支持 GitHub 仓库和 Docker 镜像，支持通配符）
 # 只允许访问白名单中的仓库/镜像，为空时不限制
 whiteList = []
 
-# 代理服务黑名单（支持GitHub仓库和Docker镜像，支持通配符）
+# 仓库黑名单（支持 GitHub 仓库和 Docker 镜像，支持通配符）
 # 禁止访问黑名单中的仓库/镜像
 # 示例：
 # blackList = [
@@ -34,7 +35,7 @@ whiteList = []
 # ]
 blackList = []
 
-# 代理配置，支持有用户名/密码认证和无认证模式
+# 上游代理
 # 无认证: socks5://127.0.0.1:1080
 # 有认证: socks5://username:password@127.0.0.1:1080
 # 留空不使用代理
@@ -44,7 +45,7 @@ proxy = ""
 # 批量下载离线镜像数量限制
 maxImages = 10
 
-# Registry映射配置，支持多种镜像仓库上游
+# Registry 映射配置，支持多种镜像仓库上游
 [registries]
 
 # GitHub Container Registry
@@ -76,7 +77,10 @@ authType = "anonymous"
 enabled = true
 
 [tokenCache]
-# 是否启用缓存(同时控制Token和Manifest缓存)显著提升性能
+# 启用缓存（同时控制 Token 和 Manifest 缓存）
 enabled = true
-# 默认缓存时间，Go duration 格式（如 20m、1h、30s）
+# 缓存时间，Go duration 格式（如 20m、1h、30s）
 defaultTTL = "20m"
+
+# 日志等级：debug/info/warn/error
+logLevel = "info"

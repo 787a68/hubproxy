@@ -29,8 +29,7 @@ type RateRule struct {
 // AppConfig 应用配置结构体（不可变快照，加载后通过 atomic.Value 发布）
 type AppConfig struct {
 	Server struct {
-		Host           string `toml:"host"`
-		Port           int    `toml:"port"`
+		Addr           string `toml:"addr"`
 		FileSize       int64  `toml:"fileSize"`
 		EnableH2C      bool   `toml:"enableH2C"`
 		EnableFrontend bool   `toml:"enableFrontend"`
@@ -57,6 +56,9 @@ type AppConfig struct {
 		DefaultTTL string `toml:"defaultTTL"`
 	} `toml:"tokenCache"`
 
+	// LogLevel 日志等级：debug/info/warn/error
+	LogLevel string `toml:"logLevel"`
+
 	// 解析后的派生字段（不来自 TOML，加载时计算）
 	parsedTTL time.Duration
 }
@@ -71,19 +73,17 @@ var configHolder atomic.Pointer[AppConfig]
 func DefaultConfig() *AppConfig {
 	cfg := &AppConfig{
 		Server: struct {
-			Host           string `toml:"host"`
-			Port           int    `toml:"port"`
+			Addr           string `toml:"addr"`
 			FileSize       int64  `toml:"fileSize"`
 			EnableH2C      bool   `toml:"enableH2C"`
 			EnableFrontend bool   `toml:"enableFrontend"`
 		}{
-			Host:           "0.0.0.0",
-			Port:           5000,
+			Addr:           "0.0.0.0:5000",
 			FileSize:       1 * 1024 * 1024 * 1024,
 			EnableH2C:      true,
 			EnableFrontend: true,
 		},
-		IPLimits: []string{"* 1 100"},
+		IPLimits: []string{"* 3 500"},
 		Access: struct {
 			WhiteList []string `toml:"whiteList"`
 			BlackList []string `toml:"blackList"`
@@ -131,6 +131,7 @@ func DefaultConfig() *AppConfig {
 			Enabled:    true,
 			DefaultTTL: "20m",
 		},
+		LogLevel: "info",
 	}
 	cfg.parsedTTL = 20 * time.Minute
 	return cfg
@@ -203,13 +204,8 @@ func applyDerived(cfg *AppConfig) {
 
 // overrideFromEnv 从环境变量覆盖配置
 func overrideFromEnv(cfg *AppConfig) {
-	if val := os.Getenv("SERVER_HOST"); val != "" {
-		cfg.Server.Host = val
-	}
-	if val := os.Getenv("SERVER_PORT"); val != "" {
-		if port, err := strconv.Atoi(val); err == nil && port > 0 {
-			cfg.Server.Port = port
-		}
+	if val := os.Getenv("ADDR"); val != "" {
+		cfg.Server.Addr = val
 	}
 	envBool("H2C", &cfg.Server.EnableH2C)
 	envBool("FRONTEND", &cfg.Server.EnableFrontend)
@@ -233,6 +229,10 @@ func overrideFromEnv(cfg *AppConfig) {
 
 	if val := os.Getenv("IP_LIMITS"); val != "" {
 		cfg.IPLimits = strings.Split(val, ",")
+	}
+
+	if val := os.Getenv("LOG_LEVEL"); val != "" {
+		cfg.LogLevel = val
 	}
 }
 

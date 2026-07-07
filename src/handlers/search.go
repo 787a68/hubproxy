@@ -453,14 +453,14 @@ func parsePaginationParams(c *gin.Context, defaultPageSize int) (page, pageSize 
 		if v, err := strconv.Atoi(p); err == nil && v > 0 {
 			page = v
 		} else if err != nil {
-			utils.Logger().Warn("parse page param failed", "value", p, "err", err)
+			utils.Logger().Debug("parse page param failed", "value", p, "err", err)
 		}
 	}
 	if ps := c.Query("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
 			pageSize = v
 		} else if err != nil {
-			utils.Logger().Warn("parse page_size param failed", "value", ps, "err", err)
+			utils.Logger().Debug("parse page_size param failed", "value", ps, "err", err)
 		}
 	}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"embed"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -122,12 +121,12 @@ func healthzHandler(c *gin.Context) {
 }
 
 func main() {
-	// 初始化结构化日志
-	slog.SetDefault(utils.Logger())
-
 	if err := config.LoadConfig(); err != nil {
 		log.Fatalf("配置加载失败: %v", err)
 	}
+
+	// 初始化结构化日志（在配置加载后，读取 logLevel）
+	slog.SetDefault(utils.Logger())
 
 	utils.InitHTTPClients()
 	globalLimiter = utils.InitGlobalLimiter()
@@ -139,14 +138,14 @@ func main() {
 	router := buildRouter(cfg)
 
 	utils.Logger().Info("starting hubproxy",
-		"addr", fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		"addr", cfg.Server.Addr,
 		"ip_limits", cfg.IPLimits,
 		"h2c", cfg.Server.EnableH2C,
 		"version", AppVersion(),
 	)
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Addr:         cfg.Server.Addr,
 		Handler:      router,
 		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 30 * time.Minute, // 流式 tar 下载需要长时间写入
