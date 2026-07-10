@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -13,7 +14,7 @@ var (
 	logger     *slog.Logger
 )
 
-// logf 返回全局 slog 日志器（JSON 格式）
+// logf 返回全局 slog 日志器（JSON 格式，同时输出到 stdout 和文件）
 func logf() *slog.Logger {
 	loggerOnce.Do(func() {
 		level := slog.LevelInfo
@@ -25,7 +26,17 @@ func logf() *slog.Logger {
 		case "error":
 			level = slog.LevelError
 		}
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+
+		var w io.Writer = os.Stdout
+
+		logFile := config.GetConfig().LogFile
+		if logFile != "" {
+			if f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+				w = io.MultiWriter(os.Stdout, f)
+			}
+		}
+
+		logger = slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
 			Level: level,
 		}))
 	})

@@ -20,7 +20,7 @@ jobs:
       - name: 设置Go环境
         uses: actions/setup-go@v6
         with:
-          go-version-file: "src/go.mod"
+          go-version: stable
           cache-dependency-path: "src/go.sum"
           
       - name: 获取版本号

@@ -76,11 +76,11 @@ authHost = "registry.k8s.io"
 authType = "anonymous"
 enabled = true
 
-[tokenCache]
-# 启用缓存（同时控制 Token 和 Manifest 缓存）
-enabled = true
-# 缓存时间，Go duration 格式（如 20m、1h、30s）
-defaultTTL = "20m"
+# 缓存，"off" 禁用，否则为 TTL（如 20m、1h、30s）
+cache = "20m"
 
 # 日志等级：debug/info/warn/error
 logLevel = "info"
+
+# 日志文件路径，为空则只输出到 stdout
+logFile = ""

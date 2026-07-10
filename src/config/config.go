@@ -51,20 +51,25 @@ type AppConfig struct {
 
 	Registries map[string]RegistryMapping `toml:"registries"`
 
-	TokenCache struct {
-		Enabled    bool   `toml:"enabled"`
-		DefaultTTL string `toml:"defaultTTL"`
-	} `toml:"tokenCache"`
+	// Cache 缓存配置，"off" 禁用，否则为 TTL（如 "20m"）
+	Cache string `toml:"cache"`
 
 	// LogLevel 日志等级：debug/info/warn/error
 	LogLevel string `toml:"logLevel"`
 
+	// LogFile 日志文件路径，为空则只输出到 stdout
+	LogFile string `toml:"logFile"`
+
 	// 解析后的派生字段（不来自 TOML，加载时计算）
 	parsedTTL time.Duration
+	cacheOn   bool
 }
 
-// ParsedTTL 返回解析后的默认缓存 TTL
+// ParsedTTL 返回解析后的缓存 TTL
 func (c *AppConfig) ParsedTTL() time.Duration { return c.parsedTTL }
+
+// CacheEnabled 返回缓存是否启用
+func (c *AppConfig) CacheEnabled() bool { return c.cacheOn }
 
 // 全局不可变配置快照，通过 atomic.Value 实现无锁读取
 var configHolder atomic.Pointer[AppConfig]
@@ -124,14 +129,9 @@ func DefaultConfig() *AppConfig {
 				Enabled:  true,
 			},
 		},
-		TokenCache: struct {
-			Enabled    bool   `toml:"enabled"`
-			DefaultTTL string `toml:"defaultTTL"`
-		}{
-			Enabled:    true,
-			DefaultTTL: "20m",
-		},
+		Cache:    "20m",
 		LogLevel: "info",
+		LogFile:  "",
 	}
 	cfg.parsedTTL = 20 * time.Minute
 	return cfg
@@ -195,9 +195,12 @@ func mergeDefaultConfig(cfg *AppConfig) {
 
 // applyDerived 计算派生字段
 func applyDerived(cfg *AppConfig) {
-	if cfg.TokenCache.DefaultTTL != "" {
-		if parsed, err := time.ParseDuration(cfg.TokenCache.DefaultTTL); err == nil {
+	cfg.cacheOn = cfg.Cache != "off" && cfg.Cache != ""
+	if cfg.cacheOn {
+		if parsed, err := time.ParseDuration(cfg.Cache); err == nil {
 			cfg.parsedTTL = parsed
+		} else {
+			cfg.parsedTTL = 20 * time.Minute
 		}
 	}
 }
@@ -222,9 +225,8 @@ func overrideFromEnv(cfg *AppConfig) {
 	}
 	envInt("MAX_IMAGES", &cfg.Download.MaxImages, 1)
 
-	envBool("CACHE", &cfg.TokenCache.Enabled)
-	if val := os.Getenv("CACHE_TTL"); val != "" {
-		cfg.TokenCache.DefaultTTL = val
+	if val := os.Getenv("CACHE"); val != "" {
+		cfg.Cache = val
 	}
 
 	if val := os.Getenv("IP_LIMITS"); val != "" {
@@ -233,6 +235,10 @@ func overrideFromEnv(cfg *AppConfig) {
 
 	if val := os.Getenv("LOG_LEVEL"); val != "" {
 		cfg.LogLevel = val
+	}
+
+	if val := os.Getenv("LOG_FILE"); val != "" {
+		cfg.LogFile = val
 	}
 }
 

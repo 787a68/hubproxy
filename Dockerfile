@@ -1,5 +1,5 @@
 # 多阶段构建 - 构建阶段
-FROM golang:1.26-alpine AS builder
+FROM golang:alpine AS builder
 
 ARG TARGETARCH
 ARG TARGETOS=linux

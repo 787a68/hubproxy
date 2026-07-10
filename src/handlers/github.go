@@ -122,6 +122,7 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 		}
 	}
 	req.Header.Del("Host")
+	req.Header.Set("Accept-Language", "en-US")
 
 	resp, err := utils.GetGlobalHTTPClient().Do(req)
 	if err != nil {
