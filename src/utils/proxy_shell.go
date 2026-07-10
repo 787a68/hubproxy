@@ -87,7 +87,14 @@ func processGitHubURLs(content, host string) string {
 
 // transformURL URL转换函数
 func transformURL(url, host string) string {
-	if strings.Contains(url, host) {
+	// 确保 host 有协议头
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		host = "https://" + host
+	}
+	host = strings.TrimSuffix(host, "/")
+
+	// 精确匹配 host 前缀，避免子串误匹配（如 hub.com.evil.com）
+	if url == host || strings.HasPrefix(url, host+"/") {
 		return url
 	}
 
@@ -96,12 +103,6 @@ func transformURL(url, host string) string {
 	} else if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "//") {
 		url = "https://" + url
 	}
-
-	// 确保 host 有协议头
-	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-		host = "https://" + host
-	}
-	host = strings.TrimSuffix(host, "/")
 
 	return host + "/" + url
 }

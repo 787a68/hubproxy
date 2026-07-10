@@ -28,6 +28,7 @@ func (ac *AccessController) parseDockerImage(image string) dockerImageInfo {
 	var tag string
 	if idx := strings.LastIndex(image, ":"); idx != -1 {
 		part := image[idx+1:]
+		// 端口冒号后的部分含 "/" 则不是 tag（如 registry:5000/myimage）
 		if !strings.Contains(part, "/") {
 			tag = part
 			image = image[:idx]
@@ -41,12 +42,14 @@ func (ac *AccessController) parseDockerImage(image string) dockerImageInfo {
 	if strings.Contains(image, "/") {
 		parts := strings.Split(image, "/")
 		if len(parts) >= 2 {
-			if strings.Contains(parts[0], ".") {
+			// parts[0] 含 "." 或 ":" 视为 registry 域名
+			if strings.ContainsAny(parts[0], ".:") {
 				if len(parts) >= 3 {
 					namespace = parts[1]
 					repository = parts[2]
 				} else {
-					namespace = "library"
+					// registry/user 形式，user 既是 namespace 也是 repository
+					namespace = parts[1]
 					repository = parts[1]
 				}
 			} else {
@@ -76,13 +79,13 @@ func (ac *AccessController) CheckDockerAccess(image string) (allowed bool, reaso
 	imageInfo := ac.parseDockerImage(image)
 
 	if len(cfg.Access.WhiteList) > 0 {
-		if !ac.matchImageInList(imageInfo, cfg.Access.WhiteList) {
+		if !matchWildcard(imageInfo.FullName, imageInfo.Namespace, imageInfo.Repository, cfg.Access.WhiteList) {
 			return false, "不在Docker镜像白名单内"
 		}
 	}
 
 	if len(cfg.Access.BlackList) > 0 {
-		if ac.matchImageInList(imageInfo, cfg.Access.BlackList) {
+		if matchWildcard(imageInfo.FullName, imageInfo.Namespace, imageInfo.Repository, cfg.Access.BlackList) {
 			return false, "Docker镜像在黑名单内"
 		}
 	}
@@ -98,21 +101,30 @@ func (ac *AccessController) CheckGitHubAccess(matches []string) (allowed bool, r
 
 	cfg := config.GetConfig()
 
-	if len(cfg.Access.WhiteList) > 0 && !ac.checkList(matches, cfg.Access.WhiteList) {
+	username := strings.ToLower(strings.TrimSpace(matches[0]))
+	repoName := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(matches[1], ".git")))
+	fullRepo := username + "/" + repoName
+
+	if len(cfg.Access.WhiteList) > 0 && !matchWildcard(fullRepo, username, repoName, cfg.Access.WhiteList) {
 		return false, "不在GitHub仓库白名单内"
 	}
 
-	if len(cfg.Access.BlackList) > 0 && ac.checkList(matches, cfg.Access.BlackList) {
+	if len(cfg.Access.BlackList) > 0 && matchWildcard(fullRepo, username, repoName, cfg.Access.BlackList) {
 		return false, "GitHub仓库在黑名单内"
 	}
 
 	return true, ""
 }
 
-// matchImageInList 检查Docker镜像是否在指定列表中
-func (ac *AccessController) matchImageInList(imageInfo dockerImageInfo, list []string) bool {
-	fullName := strings.ToLower(imageInfo.FullName)
-	namespace := strings.ToLower(imageInfo.Namespace)
+// matchWildcard 通配符匹配，统一用于 Docker 镜像和 GitHub 仓库的黑白名单检查
+// fullName: "namespace/repository" 或 "user/repo"
+// namespace: namespace 或 user
+// repository: repository 或 repo
+// list: 规则列表，支持: 完全匹配、ns/*、ns/repo、*/repo、prefix*、ns/prefix*
+func matchWildcard(fullName, namespace, repository string, list []string) bool {
+	fullName = strings.ToLower(fullName)
+	namespace = strings.ToLower(namespace)
+	repository = strings.ToLower(repository)
 
 	for _, item := range list {
 		item = strings.ToLower(strings.TrimSpace(item))
@@ -120,14 +132,17 @@ func (ac *AccessController) matchImageInList(imageInfo dockerImageInfo, list []s
 			continue
 		}
 
+		// 完全匹配
 		if fullName == item {
 			return true
 		}
 
+		// namespace 或 namespace/* 匹配
 		if item == namespace || item == namespace+"/*" {
 			return true
 		}
 
+		// 后缀通配: prefix*
 		if strings.HasSuffix(item, "*") {
 			prefix := strings.TrimSuffix(item, "*")
 			if strings.HasPrefix(fullName, prefix) {
@@ -135,65 +150,18 @@ func (ac *AccessController) matchImageInList(imageInfo dockerImageInfo, list []s
 			}
 		}
 
-		if strings.HasPrefix(item, "*/") {
-			repoPattern := strings.TrimPrefix(item, "*/")
-			if strings.HasSuffix(repoPattern, "*") {
-				repoPrefix := strings.TrimSuffix(repoPattern, "*")
-				if strings.HasPrefix(imageInfo.Repository, repoPrefix) {
-					return true
-				}
-			} else {
-				if strings.ToLower(imageInfo.Repository) == repoPattern {
-					return true
-				}
-			}
-		}
-
+		// 前缀目录匹配: ns/...
 		if strings.HasPrefix(fullName, item+"/") {
 			return true
 		}
-	}
-	return false
-}
 
-// checkList GitHub仓库检查逻辑
-func (ac *AccessController) checkList(matches, list []string) bool {
-	if len(matches) < 2 {
-		return false
-	}
-
-	username := strings.ToLower(strings.TrimSpace(matches[0]))
-	repoName := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(matches[1], ".git")))
-	fullRepo := username + "/" + repoName
-
-	for _, item := range list {
-		item = strings.ToLower(strings.TrimSpace(item))
-		if item == "" {
-			continue
-		}
-
-		if fullRepo == item {
-			return true
-		}
-
-		if item == username || item == username+"/*" {
-			return true
-		}
-
-		if strings.HasSuffix(item, "*") {
-			prefix := strings.TrimSuffix(item, "*")
-			if strings.HasPrefix(fullRepo, prefix) {
-				return true
-			}
-		}
-
-		if strings.HasPrefix(fullRepo, item+"/") {
-			return true
-		}
-
+		// 前缀通配: */repo 或 */prefix*
 		if strings.HasPrefix(item, "*/") {
 			p := item[2:]
-			if p == repoName || (strings.HasSuffix(p, "*") && strings.HasPrefix(repoName, p[:len(p)-1])) {
+			if p == repository {
+				return true
+			}
+			if strings.HasSuffix(p, "*") && strings.HasPrefix(repository, p[:len(p)-1]) {
 				return true
 			}
 		}

@@ -10,11 +10,8 @@
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/public/nav.css">
     <style>
-        :root { --success: #10b981; --warning: #f59e0b; --error: #ef4444; }
-        .main { flex: 1; padding: 2rem 1rem; }
-        .container { max-width: 800px; margin: 0 auto; }
+        .container { max-width: 800px; }
         .header { text-align: center; margin-bottom: 3rem; }
-        .title { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; background: linear-gradient(135deg, var(--primary), #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .subtitle { font-size: 1.125rem; color: var(--muted-foreground); margin-bottom: 2rem; }
         .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 2rem; }
         .feature { display: flex; align-items: center; gap: 0.5rem; padding: 1rem; background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius); font-weight: 500; }
@@ -27,18 +24,11 @@
         .form-input:focus, .form-select:focus, .textarea:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
         .textarea { min-height: 120px; resize: vertical; font-family: monospace; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-weight: 500; font-size: 1rem; cursor: pointer; transition: all 0.2s; text-decoration: none; }
-        .btn-primary { background-color: var(--primary); color: var(--primary-foreground); }
-        .btn-primary:hover:not(:disabled) { background-color: #1d4ed8; }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-full { width: 100%; }
         .status { padding: 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-weight: 500; }
         .status-success { background-color: rgba(16,185,129,0.1); color: var(--success); border: 1px solid rgba(16,185,129,0.2); }
         .status-error { background-color: rgba(239,68,68,0.1); color: var(--error); border: 1px solid rgba(239,68,68,0.2); }
         .status-warning { background-color: rgba(245,158,11,0.1); color: var(--warning); border: 1px solid rgba(245,158,11,0.2); }
         .help-text { font-size: 0.875rem; color: var(--muted-foreground); margin-top: 0.25rem; }
-        .loading { display: inline-block; width: 1rem; height: 1rem; border: 2px solid transparent; border-top: 2px solid currentColor; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .switch-container { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem; }
         .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -48,26 +38,18 @@
         input:checked + .slider:before { transform: translateX(26px); }
         .switch-label { font-weight: 500; color: var(--foreground); cursor: pointer; }
         .hidden { display: none; }
-        @media (max-width: 768px) { .main { padding: 1rem 0.5rem; } .download-section, .batch-section { padding: 1.5rem; } .form-row { grid-template-columns: 1fr; } .features { grid-template-columns: 1fr; } .title { font-size: 2rem; } }
+        .progress-bar { width: 100%; height: 6px; background-color: var(--muted); border-radius: 3px; margin-top: 0.5rem; overflow: hidden; }
+        .progress-fill { height: 100%; background-color: var(--primary); transition: width 0.3s; width: 0%; }
+        @media (max-width: 768px) { .main { padding: 1rem 0.5rem; } .download-section, .batch-section { padding: 1.5rem; } .form-row { grid-template-columns: 1fr; } .features { grid-template-columns: 1fr; } .gradient-title { font-size: 2rem; } }
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="/" class="logo"><div class="logo-icon">⚡</div>加速服务</a>
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">☰</button>
-            <div class="nav-links" id="navLinks">
-                <a href="/" class="nav-link">🚀 GitHub加速</a>
-                <a href="/images.html" class="nav-link active">🐳 离线镜像下载</a>
-                <a href="/search.html" class="nav-link">🔍 镜像搜索</a>
-            </div>
-        </div>
-    </nav>
+    <div id="nav-placeholder"></div>
 
     <main class="main">
         <div class="container">
             <div class="header">
-                <h1 class="title">Docker离线镜像下载</h1>
+                <h1 class="gradient-title">Docker离线镜像下载</h1>
                 <p class="subtitle">即点即下，无需等待打包，完全符合docker load加载标准</p>
                 <div class="features">
                     <div class="feature"><span class="feature-icon">⚡</span><span>即时下载</span></div>
@@ -87,7 +69,16 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="platformInput">目标架构（可选）</label>
-                        <input type="text" id="platformInput" class="form-input" placeholder="linux/amd64" value="linux/amd64">
+                        <select id="platformInput" class="form-select">
+                            <option value="linux/amd64" selected>linux/amd64</option>
+                            <option value="linux/arm64">linux/arm64</option>
+                            <option value="linux/arm/v7">linux/arm/v7</option>
+                            <option value="linux/arm/v6">linux/arm/v6</option>
+                            <option value="linux/386">linux/386</option>
+                            <option value="linux/ppc64le">linux/ppc64le</option>
+                            <option value="linux/s390x">linux/s390x</option>
+                            <option value="">自动选择</option>
+                        </select>
                         <div class="help-text">常用平台: linux/amd64, linux/arm64, linux/arm/v7</div>
                     </div>
                     <div class="switch-container">
@@ -96,7 +87,7 @@
                     </div>
                     <button type="submit" class="btn btn-primary btn-full" id="downloadBtn">
                         <span id="downloadText">立即下载</span>
-                        <span id="downloadLoading" class="loading hidden"></span>
+                        <span id="downloadLoading" class="loading-spinner hidden"></span>
                     </button>
                 </form>
             </div>
@@ -111,7 +102,16 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="batchPlatformInput">目标架构（可选）</label>
-                        <input type="text" id="batchPlatformInput" class="form-input" placeholder="linux/amd64" value="linux/amd64">
+                        <select id="batchPlatformInput" class="form-select">
+                            <option value="linux/amd64" selected>linux/amd64</option>
+                            <option value="linux/arm64">linux/arm64</option>
+                            <option value="linux/arm/v7">linux/arm/v7</option>
+                            <option value="linux/arm/v6">linux/arm/v6</option>
+                            <option value="linux/386">linux/386</option>
+                            <option value="linux/ppc64le">linux/ppc64le</option>
+                            <option value="linux/s390x">linux/s390x</option>
+                            <option value="">自动选择</option>
+                        </select>
                         <div class="help-text">所有镜像将使用相同的目标架构</div>
                     </div>
                     <div class="switch-container">
@@ -120,13 +120,14 @@
                     </div>
                     <button type="submit" class="btn btn-primary btn-full" id="batchDownloadBtn">
                         <span id="batchDownloadText">开始下载</span>
-                        <span id="batchDownloadLoading" class="loading hidden"></span>
+                        <span id="batchDownloadLoading" class="loading-spinner hidden"></span>
                     </button>
                 </form>
             </div>
         </div>
     </main>
 
+    <div id="toast" class="toast"></div>
     <script src="/public/nav.js"></script>
     <script>
         function showStatus(elementId, message, type = 'success') {
@@ -202,6 +203,59 @@
             return { ok: true };
         }
 
+        // 流式下载并跟踪进度
+        async function downloadWithProgress(url, filename, statusId, imageLabel) {
+            showStatus(statusId, `正在下载 ${imageLabel}...`, 'success');
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    let errorMsg = '下载失败';
+                    try { const err = await response.json(); errorMsg = err.error || errorMsg; } catch (e) {}
+                    showStatus(statusId, errorMsg, 'error');
+                    return;
+                }
+
+                const total = parseInt(response.headers.get('Content-Length') || '0', 10);
+                const reader = response.body.getReader();
+                const chunks = [];
+                let received = 0;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    received += value.length;
+                    if (total > 0) {
+                        const percent = Math.round((received / total) * 100);
+                        showStatus(statusId, `正在下载 ${imageLabel}... ${percent}% (${formatSize(received)}/${formatSize(total)})`, 'success');
+                    } else {
+                        showStatus(statusId, `正在下载 ${imageLabel}... ${formatSize(received)}`, 'success');
+                    }
+                }
+
+                const blob = new Blob(chunks);
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(downloadUrl);
+                showStatus(statusId, `下载完成 ${imageLabel}`, 'success');
+            } catch (error) {
+                showStatus(statusId, '下载失败: ' + error.message, 'error');
+            }
+        }
+
+        function formatSize(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = bytes, unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.length - 1) { size /= 1024; unitIndex++; }
+            return `${size.toFixed(2)} ${units[unitIndex]}`;
+        }
+
         document.getElementById('singleForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const imageName = document.getElementById('imageInput').value.trim();
@@ -223,15 +277,9 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (!data || !data.download_url) { showStatus('singleStatus', '下载地址生成失败', 'error'); return; }
-                    const link = document.createElement('a');
-                    link.href = data.download_url;
-                    link.download = '';
-                    link.style.display = 'none';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
                     const platformText = platform ? ` (${platform})` : '';
-                    showStatus('singleStatus', `开始下载 ${imageName}${platformText}`, 'success');
+                    const filename = imageName.replace(/\//g, '_') + '.tar';
+                    await downloadWithProgress(data.download_url, filename, 'singleStatus', `${imageName}${platformText}`);
                 } else {
                     const error = await response.json();
                     showStatus('singleStatus', error.error || '下载失败', 'error');
@@ -269,14 +317,9 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (!data || !data.download_url) { showStatus('batchStatus', '下载地址生成失败', 'error'); return; }
-                    const link = document.createElement('a');
-                    link.href = data.download_url;
-                    link.style.display = 'none';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
                     const platformText = platform ? ` (${platform})` : '';
-                    showStatus('batchStatus', `开始下载 ${images.length} 个镜像${platformText}`, 'success');
+                    const filename = `batch_${images.length}_images.tar`;
+                    await downloadWithProgress(data.download_url, filename, 'batchStatus', `${images.length} 个镜像${platformText}`);
                 } else {
                     const error = await response.json();
                     showStatus('batchStatus', error.error || '下载失败', 'error');

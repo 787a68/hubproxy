@@ -40,16 +40,7 @@ type UniversalCache struct {
 var GlobalCache = &UniversalCache{}
 
 func (c *UniversalCache) shard(key string) *cacheShard {
-	h := fnv32(key)
-	s := &c.shards[h%cacheShards]
-	if s.items == nil {
-		s.mu.Lock()
-		if s.items == nil {
-			s.items = make(map[string]*CachedItem, cacheMaxPerShard)
-		}
-		s.mu.Unlock()
-	}
-	return s
+	return &c.shards[fnv32(key)%cacheShards]
 }
 
 // Get 获取缓存项（hot path，仅持锁一次分片）
@@ -57,14 +48,12 @@ func (c *UniversalCache) Get(key string) *CachedItem {
 	s := c.shard(key)
 	s.mu.Lock()
 	item, ok := s.items[key]
+	if ok && time.Now().After(item.ExpiresAt) {
+		delete(s.items, key)
+		ok = false
+	}
 	s.mu.Unlock()
 	if !ok {
-		return nil
-	}
-	if time.Now().After(item.ExpiresAt) {
-		s.mu.Lock()
-		delete(s.items, key)
-		s.mu.Unlock()
 		return nil
 	}
 	return item
@@ -75,7 +64,6 @@ func (c *UniversalCache) Set(key string, data []byte, contentType string, header
 	s := c.shard(key)
 	s.mu.Lock()
 	if len(s.items) >= cacheMaxPerShard {
-		// 淘汰一个最旧条目（FIFO 近似 LRU，避免遍历开销）
 		for k := range s.items {
 			delete(s.items, k)
 			break
@@ -129,14 +117,16 @@ func BuildManifestCacheKey(imageRef, reference string) string {
 	return BuildCacheKey("manifest", key)
 }
 
+// defaultTTL 返回配置的默认缓存 TTL，无效时回退到 30 分钟
+func defaultTTL() time.Duration {
+	if t := config.GetConfig().ParsedTTL(); t > 0 {
+		return t
+	}
+	return 30 * time.Minute
+}
+
 // GetManifestTTL 根据引用类型决定缓存 TTL
 func GetManifestTTL(reference string) time.Duration {
-	cfg := config.GetConfig()
-	defaultTTL := cfg.ParsedTTL()
-	if defaultTTL <= 0 {
-		defaultTTL = 30 * time.Minute
-	}
-
 	if strings.HasPrefix(reference, "sha256:") {
 		return 24 * time.Hour
 	}
@@ -145,7 +135,7 @@ func GetManifestTTL(reference string) time.Duration {
 	case "latest", "main", "master", "dev", "develop":
 		return 10 * time.Minute
 	}
-	return defaultTTL
+	return defaultTTL()
 }
 
 // ExtractTTLFromResponse 从响应中智能提取 TTL
@@ -153,17 +143,13 @@ func ExtractTTLFromResponse(responseBody []byte) time.Duration {
 	var tokenResp struct {
 		ExpiresIn int `json:"expires_in"`
 	}
-	defaultTTL := config.GetConfig().ParsedTTL()
-	if defaultTTL <= 0 {
-		defaultTTL = 30 * time.Minute
-	}
 	if json.Unmarshal(responseBody, &tokenResp) == nil && tokenResp.ExpiresIn > 0 {
 		safeTTL := time.Duration(tokenResp.ExpiresIn-300) * time.Second
 		if safeTTL > 5*time.Minute {
 			return safeTTL
 		}
 	}
-	return defaultTTL
+	return defaultTTL()
 }
 
 func WriteTokenResponse(c *gin.Context, cachedBody string) {
@@ -186,23 +172,14 @@ func IsCacheEnabled() bool {
 	return config.GetConfig().CacheEnabled()
 }
 
-// initMap 首次访问时惰性初始化分片 map（避免 init 锁开销）
-var cacheInit sync.Once
-
-func ensureShardInit() {
-	cacheInit.Do(func() {
-		for i := range GlobalCache.shards {
-			GlobalCache.shards[i].items = make(map[string]*CachedItem, cacheMaxPerShard)
-		}
-	})
-}
-
-// 启动时尽早初始化，避免首个请求竞争
+// init 启动时初始化所有分片 map，并启动后台过期清理
 func init() {
-	ensureShardInit()
+	for i := range GlobalCache.shards {
+		GlobalCache.shards[i].items = make(map[string]*CachedItem, cacheMaxPerShard)
+	}
 
 	go func() {
-		ticker := time.NewTicker(20 * time.Minute)
+		ticker := time.NewTicker(cleanupInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			now := time.Now()

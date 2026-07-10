@@ -217,27 +217,18 @@ func RateLimitMiddleware(limiter *IPRateLimiter) gin.HandlerFunc {
 			return
 		}
 
-		var ip string
-		if forwarded := c.GetHeader("X-Forwarded-For"); forwarded != "" {
-			ips := strings.Split(forwarded, ",")
-			ip = strings.TrimSpace(ips[0])
-		} else if realIP := c.GetHeader("X-Real-IP"); realIP != "" {
-			ip = realIP
-		} else if remoteIP := c.GetHeader("X-Original-Forwarded-For"); remoteIP != "" {
-			ips := strings.Split(remoteIP, ",")
-			ip = strings.TrimSpace(ips[0])
-		} else {
-			ip = c.ClientIP()
-		}
+		ip := c.ClientIP()
 		ip = extractIP(ip)
 
 		ipLimiter := limiter.GetLimiter(ip)
 		if ipLimiter == nil {
+			c.Header("Retry-After", "3600")
 			c.JSON(http.StatusForbidden, gin.H{"error": "您已被限制访问"})
 			c.Abort()
 			return
 		}
 		if !ipLimiter.Allow() {
+			c.Header("Retry-After", "60")
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "请求频率过快，暂时限制访问"})
 			c.Abort()
 			return

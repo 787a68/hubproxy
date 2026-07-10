@@ -8,12 +8,11 @@ ARG VERSION=
 
 WORKDIR /app
 
-# 先复制依赖文件，独立成层，缓存命中更高
-COPY src/go.mod src/go.sum ./
-RUN go mod download
-
 # 复制源码
-COPY src/ .
+COPY src/ ./
+
+# 自动生成 go.mod/go.sum 并下载依赖
+RUN go mod init hubproxy && go mod tidy
 
 # 静态编译 + UPX 压缩（-s -w 去 symbol，-trimpath 去路径）
 RUN apk add --no-cache upx && \

@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	// GitHub URL匹配正则表达式
+	// githubExps GitHub/HuggingFace 等加速 URL 匹配正则
+	// 索引 1 = releases/archive，2 = blob/raw，3 = info/git-*，...
 	githubExps = []*regexp.Regexp{
 		regexp.MustCompile(`^(?:https?://)?github\.com/([^/]+)/([^/]+)/(?:releases|archive)/.*`),
 		regexp.MustCompile(`^(?:https?://)?github\.com/([^/]+)/([^/]+)/(?:blob|raw)/.*`),
@@ -40,23 +41,23 @@ var blockedContentTypes = map[string]bool{
 func GitHubProxyHandler(c *gin.Context) {
 	utils.GlobalMetrics.GitHubReqs.Add(1)
 	rawPath := strings.TrimPrefix(c.Request.URL.RequestURI(), "/")
-
 	for strings.HasPrefix(rawPath, "/") {
 		rawPath = strings.TrimPrefix(rawPath, "/")
 	}
 
 	// 自动补全协议头
 	if !strings.HasPrefix(rawPath, "https://") {
-		if strings.HasPrefix(rawPath, "http:/") || strings.HasPrefix(rawPath, "https:/") {
-			rawPath = strings.Replace(rawPath, "http:/", "", 1)
-			rawPath = strings.Replace(rawPath, "https:/", "", 1)
-		} else if strings.HasPrefix(rawPath, "http://") {
+		if strings.HasPrefix(rawPath, "http://") {
 			rawPath = strings.TrimPrefix(rawPath, "http://")
+		} else if strings.HasPrefix(rawPath, "https:/") && !strings.HasPrefix(rawPath, "https://") {
+			rawPath = strings.TrimPrefix(rawPath, "https:/")
+		} else if strings.HasPrefix(rawPath, "http:/") && !strings.HasPrefix(rawPath, "http://") {
+			rawPath = strings.TrimPrefix(rawPath, "http:/")
 		}
 		rawPath = "https://" + rawPath
 	}
 
-	matches := CheckGitHubURL(rawPath)
+	matchedIdx, matches := CheckGitHubURL(rawPath)
 	if matches != nil {
 		if allowed, reason := utils.GlobalAccessController.CheckGitHubAccess(matches); !allowed {
 			var repoPath string
@@ -74,22 +75,22 @@ func GitHubProxyHandler(c *gin.Context) {
 		return
 	}
 
-	// 将blob链接转换为raw链接
-	if githubExps[1].MatchString(rawPath) {
+	// 将 blob 链接转换为 raw 链接（复用已匹配的索引，避免二次正则匹配）
+	if matchedIdx == 1 {
 		rawPath = strings.Replace(rawPath, "/blob/", "/raw/", 1)
 	}
 
 	proxyGitHubRequest(c, rawPath)
 }
 
-// CheckGitHubURL 检查URL是否匹配GitHub模式
-func CheckGitHubURL(u string) []string {
-	for _, exp := range githubExps {
+// CheckGitHubURL 检查URL是否匹配GitHub模式，返回匹配的索引和捕获组
+func CheckGitHubURL(u string) (int, []string) {
+	for i, exp := range githubExps {
 		if matches := exp.FindStringSubmatch(u); matches != nil {
-			return matches[1:]
+			return i, matches[1:]
 		}
 	}
-	return nil
+	return -1, nil
 }
 
 // proxyGitHubRequest 代理GitHub请求
@@ -137,7 +138,7 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 	}()
 
 	// 检查并处理被阻止的内容类型
-	if c.Request.Method == "GET" {
+	if c.Request.Method == http.MethodGet {
 		if contentType := resp.Header.Get("Content-Type"); blockedContentTypes[strings.ToLower(strings.Split(contentType, ";")[0])] {
 			c.JSON(http.StatusForbidden, map[string]string{
 				"error":   "Content type not allowed",
@@ -201,7 +202,7 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 		// 处理重定向
 		if location := resp.Header.Get("Location"); location != "" {
-			if CheckGitHubURL(location) != nil {
+			if _, m := CheckGitHubURL(location); m != nil {
 				c.Header("Location", "/"+location)
 			} else {
 				proxyGitHubWithRedirect(c, location, redirectCount+1)
@@ -228,7 +229,7 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 
 		// 处理重定向
 		if location := resp.Header.Get("Location"); location != "" {
-			if CheckGitHubURL(location) != nil {
+			if _, m := CheckGitHubURL(location); m != nil {
 				c.Header("Location", "/"+location)
 			} else {
 				proxyGitHubWithRedirect(c, location, redirectCount+1)
@@ -243,22 +244,4 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 			utils.Logger().Warn("forward response body failed", "url", u, "err", err)
 		}
 	}
-}
-
-// isHopByHopHeader 判断是否为 HTTP/1.1 逐跳头部
-// 这些头部在代理重定向时不应转发，避免 Content-Length/Encoding 不匹配
-var hopByHopHeaders = map[string]bool{
-	"Connection":          true,
-	"Proxy-Connection":    true,
-	"Keep-Alive":          true,
-	"Proxy-Authenticate":  true,
-	"Proxy-Authorization": true,
-	"Te":                  true,
-	"Trailers":            true,
-	"Transfer-Encoding":   true,
-	"Upgrade":             true,
-}
-
-func isHopByHopHeader(key string) bool {
-	return hopByHopHeaders[http.CanonicalHeaderKey(key)]
 }

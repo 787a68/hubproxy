@@ -63,13 +63,13 @@ func RequestLogger(slowThreshold time.Duration) gin.HandlerFunc {
 
 		switch {
 		case status >= 500:
-			logf().Error("request", reqFields...)
+			getLogger().Error("request", reqFields...)
 		case status >= 400:
-			logf().Warn("request", reqFields...)
+			getLogger().Warn("request", reqFields...)
 		case latency >= slowThreshold:
-			logf().Info("request", reqFields...)
+			getLogger().Info("request", reqFields...)
 		default:
-			logf().Debug("request", reqFields...)
+			getLogger().Debug("request", reqFields...)
 		}
 	}
 }

@@ -14,8 +14,8 @@ var (
 	logger     *slog.Logger
 )
 
-// logf 返回全局 slog 日志器（JSON 格式，同时输出到 stdout 和文件）
-func logf() *slog.Logger {
+// getLogger 返回全局 slog 日志器（JSON 格式，同时输出到 stdout 和文件）
+func getLogger() *slog.Logger {
 	loggerOnce.Do(func() {
 		level := slog.LevelInfo
 		switch config.GetConfig().LogLevel {
@@ -44,4 +44,4 @@ func logf() *slog.Logger {
 }
 
 // Logger 暴露全局 logger 供其他包使用
-func Logger() *slog.Logger { return logf() }
+func Logger() *slog.Logger { return getLogger() }

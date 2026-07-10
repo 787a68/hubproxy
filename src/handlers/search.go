@@ -168,17 +168,6 @@ func (c *SearchCache) evictOldestLocked() {
 	}
 }
 
-func init() {
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			searchCache.Cleanup()
-		}
-	}()
-}
-
 // normalizeRepository 统一规范化仓库信息
 func normalizeRepository(repo *Repository) {
 	if repo.IsOfficial {

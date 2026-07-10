@@ -2,7 +2,7 @@ name: docker
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -50,8 +50,7 @@ jobs:
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.arch }}-${{ steps.version.outputs.ver }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.arch }}
           labels: |
             org.opencontainers.image.title=HubProxy
             org.opencontainers.image.version=${{ steps.version.outputs.ver }}
@@ -77,6 +76,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: 计算版本号
         id: version
         run: |
@@ -88,14 +90,8 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           VER="${{ steps.version.outputs.ver }}"
 
-          # latest → 自动识别架构
-          docker buildx imagetools create -t "$IMAGE:latest" \
-            "$IMAGE:amd64-$VER" "$IMAGE:arm64-$VER"
-
-          # 日期版本 → 自动识别架构
           docker buildx imagetools create -t "$IMAGE:$VER" \
-            "$IMAGE:amd64-$VER" "$IMAGE:arm64-$VER"
+            "$IMAGE:amd64" "$IMAGE:arm64"
 
-          # arm64 → 最新 ARM64
-          docker buildx imagetools create -t "$IMAGE:arm64" \
-            "$IMAGE:arm64-$VER"
+          docker buildx imagetools create -t "$IMAGE:latest" \
+            "$IMAGE:amd64" "$IMAGE:arm64"

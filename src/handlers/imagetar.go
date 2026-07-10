@@ -304,7 +304,6 @@ func (is *ImageStreamer) StreamImageToGin(ctx context.Context, imageRef string, 
 	return is.streamImageLayers(ctx, img, c.Writer, options, imageRef)
 }
 
-// streamMultiArchImage 处理多架构镜像
 // streamImageLayers 处理镜像层
 func (is *ImageStreamer) streamImageLayers(ctx context.Context, img v1.Image, writer io.Writer, options *StreamOptions, imageRef string) error {
 	var finalWriter io.Writer = writer
@@ -330,19 +329,24 @@ func (is *ImageStreamer) streamImageLayers(ctx context.Context, img v1.Image, wr
 
 	utils.Logger().Debug("image layers", "count", len(layers))
 
-	return is.streamDockerFormatWithReturn(ctx, tarWriter, img, layers, configFile, imageRef, nil, nil, options)
-}
-
-// streamDockerFormatWithReturn 生成Docker格式并返回manifest和repositories信息
-func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWriter *tar.Writer, img v1.Image, layers []v1.Layer, configFile *v1.ConfigFile, imageRef string, manifestOut *map[string]interface{}, repositoriesOut *map[string]map[string]string, options *StreamOptions) error {
-	configDigest, err := img.ConfigName()
+	manifest, repositories, err := is.writeImageToTar(ctx, tarWriter, img, layers, configFile, imageRef, options)
 	if err != nil {
 		return err
 	}
 
+	return is.writeManifestFiles(tarWriter, []map[string]interface{}{manifest}, repositories)
+}
+
+// writeImageToTar 将镜像 config 和 layers 写入 tar，返回 manifest 和 repositories 信息
+func (is *ImageStreamer) writeImageToTar(ctx context.Context, tarWriter *tar.Writer, img v1.Image, layers []v1.Layer, configFile *v1.ConfigFile, imageRef string, options *StreamOptions) (map[string]interface{}, map[string]map[string]string, error) {
+	configDigest, err := img.ConfigName()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	configData, err := json.Marshal(configFile)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	configName := configDigest.Hex + ".json"
@@ -353,91 +357,36 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 	}
 
 	if err := tarWriter.WriteHeader(configHeader); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if _, err := tarWriter.Write(configData); err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	layerDirs := make([]string, len(layers))
 	for i, layer := range layers {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, nil, ctx.Err()
 		default:
 		}
 
-		if err := func() error {
-			digest, err := layer.Digest()
-			if err != nil {
-				return err
-			}
-			layerDirs[i] = digest.Hex
-
-			layerDir := digest.Hex
-			layerHeader := &tar.Header{
-				Name:     layerDir + "/",
-				Typeflag: tar.TypeDir,
-				Mode:     0755,
-			}
-
-			if err := tarWriter.WriteHeader(layerHeader); err != nil {
-				return err
-			}
-
-			var layerSize int64
-			var layerReader io.ReadCloser
-
-			if options != nil && options.UseCompressedLayers {
-				layerSize, err = layer.Size()
-				if err != nil {
-					return err
-				}
-				layerReader, err = layer.Compressed()
-			} else {
-				layerSize, err = partial.UncompressedSize(layer)
-				if err != nil {
-					return err
-				}
-				layerReader, err = layer.Uncompressed()
-			}
-
-			if err != nil {
-				return err
-			}
-			defer layerReader.Close()
-
-			layerTarHeader := &tar.Header{
-				Name: layerDir + "/layer.tar",
-				Size: layerSize,
-				Mode: 0644,
-			}
-
-			if err := tarWriter.WriteHeader(layerTarHeader); err != nil {
-				return err
-			}
-
-			if _, err := io.Copy(tarWriter, layerReader); err != nil {
-				return err
-			}
-
-			return nil
-		}(); err != nil {
-			return err
+		dir, err := is.writeLayerToTar(tarWriter, layer, i, len(layers), options)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		utils.Logger().Debug("layer processed", "index", i+1, "total", len(layers))
+		layerDirs[i] = dir
 	}
 
-	singleManifest := map[string]interface{}{
+	manifest := map[string]interface{}{
 		"Config":   configName,
 		"RepoTags": []string{imageRef},
 		"Layers": func() []string {
-			var layers []string
+			var dirs []string
 			for _, dir := range layerDirs {
-				layers = append(layers, dir+"/layer.tar")
+				dirs = append(dirs, dir+"/layer.tar")
 			}
-			return layers
+			return dirs
 		}(),
 	}
 
@@ -449,29 +398,77 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 		repositories[repoName] = map[string]string{tag: configDigest.Hex}
 	}
 
-	if manifestOut != nil && repositoriesOut != nil {
-		*manifestOut = singleManifest
-		*repositoriesOut = repositories
-		return nil
+	return manifest, repositories, nil
+}
+
+// writeLayerToTar 写入单个 layer 到 tar，返回 layer 目录名
+func (is *ImageStreamer) writeLayerToTar(tarWriter *tar.Writer, layer v1.Layer, index, total int, options *StreamOptions) (string, error) {
+	digest, err := layer.Digest()
+	if err != nil {
+		return "", err
+	}
+	layerDir := digest.Hex
+
+	layerHeader := &tar.Header{
+		Name:     layerDir + "/",
+		Typeflag: tar.TypeDir,
+		Mode:     0755,
+	}
+	if err := tarWriter.WriteHeader(layerHeader); err != nil {
+		return "", err
 	}
 
-	manifest := []map[string]interface{}{singleManifest}
+	var layerSize int64
+	var layerReader io.ReadCloser
 
-	manifestData, err := json.Marshal(manifest)
+	if options != nil && options.UseCompressedLayers {
+		layerSize, err = layer.Size()
+		if err != nil {
+			return "", err
+		}
+		layerReader, err = layer.Compressed()
+	} else {
+		layerSize, err = partial.UncompressedSize(layer)
+		if err != nil {
+			return "", err
+		}
+		layerReader, err = layer.Uncompressed()
+	}
+	if err != nil {
+		return "", err
+	}
+	defer layerReader.Close()
+
+	layerTarHeader := &tar.Header{
+		Name: layerDir + "/layer.tar",
+		Size: layerSize,
+		Mode: 0644,
+	}
+	if err := tarWriter.WriteHeader(layerTarHeader); err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(tarWriter, layerReader); err != nil {
+		return "", err
+	}
+
+	utils.Logger().Debug("layer processed", "index", index+1, "total", total)
+	return layerDir, nil
+}
+
+// writeManifestFiles 写入 manifest.json 和 repositories 文件
+func (is *ImageStreamer) writeManifestFiles(tarWriter *tar.Writer, manifests []map[string]interface{}, repositories map[string]map[string]string) error {
+	manifestData, err := json.Marshal(manifests)
 	if err != nil {
 		return err
 	}
-
 	manifestHeader := &tar.Header{
 		Name: "manifest.json",
 		Size: int64(len(manifestData)),
 		Mode: 0644,
 	}
-
 	if err := tarWriter.WriteHeader(manifestHeader); err != nil {
 		return err
 	}
-
 	if _, err := tarWriter.Write(manifestData); err != nil {
 		return err
 	}
@@ -480,23 +477,24 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 	if err != nil {
 		return err
 	}
-
 	repositoriesHeader := &tar.Header{
 		Name: "repositories",
 		Size: int64(len(repositoriesData)),
 		Mode: 0644,
 	}
-
 	if err := tarWriter.WriteHeader(repositoriesHeader); err != nil {
 		return err
 	}
-
 	_, err = tarWriter.Write(repositoriesData)
 	return err
 }
 
-// processImageForBatch 处理镜像的公共逻辑
-func (is *ImageStreamer) processImageForBatch(ctx context.Context, img v1.Image, tarWriter *tar.Writer, imageRef string, options *StreamOptions) (map[string]interface{}, map[string]map[string]string, error) {
+func (is *ImageStreamer) streamSingleImageForBatch(ctx context.Context, tarWriter *tar.Writer, imageRef string, options *StreamOptions) (map[string]interface{}, map[string]map[string]string, error) {
+	img, err := is.resolveImage(ctx, imageRef, options)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	layers, err := img.Layers()
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取镜像层失败: %w", err)
@@ -509,24 +507,7 @@ func (is *ImageStreamer) processImageForBatch(ctx context.Context, img v1.Image,
 
 	utils.Logger().Debug("image layers", "count", len(layers))
 
-	var manifest map[string]interface{}
-	var repositories map[string]map[string]string
-
-	err = is.streamDockerFormatWithReturn(ctx, tarWriter, img, layers, configFile, imageRef, &manifest, &repositories, options)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return manifest, repositories, nil
-}
-
-func (is *ImageStreamer) streamSingleImageForBatch(ctx context.Context, tarWriter *tar.Writer, imageRef string, options *StreamOptions) (map[string]interface{}, map[string]map[string]string, error) {
-	img, err := is.resolveImage(ctx, imageRef, options)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return is.processImageForBatch(ctx, img, tarWriter, imageRef, options)
+	return is.writeImageToTar(ctx, tarWriter, img, layers, configFile, imageRef, options)
 }
 
 // selectPlatformImage 从多架构镜像中选择合适的平台镜像
@@ -938,42 +919,8 @@ func (is *ImageStreamer) StreamMultipleImages(ctx context.Context, imageRefs []s
 		}
 	}
 
-	manifestData, err := json.Marshal(allManifests)
-	if err != nil {
-		return fmt.Errorf("序列化manifest失败: %w", err)
-	}
-
-	manifestHeader := &tar.Header{
-		Name: "manifest.json",
-		Size: int64(len(manifestData)),
-		Mode: 0644,
-	}
-
-	if err := tarWriter.WriteHeader(manifestHeader); err != nil {
-		return fmt.Errorf("写入manifest header失败: %w", err)
-	}
-
-	if _, err := tarWriter.Write(manifestData); err != nil {
-		return fmt.Errorf("写入manifest数据失败: %w", err)
-	}
-
-	repositoriesData, err := json.Marshal(allRepositories)
-	if err != nil {
-		return fmt.Errorf("序列化repositories失败: %w", err)
-	}
-
-	repositoriesHeader := &tar.Header{
-		Name: "repositories",
-		Size: int64(len(repositoriesData)),
-		Mode: 0644,
-	}
-
-	if err := tarWriter.WriteHeader(repositoriesHeader); err != nil {
-		return fmt.Errorf("写入repositories header失败: %w", err)
-	}
-
-	if _, err := tarWriter.Write(repositoriesData); err != nil {
-		return fmt.Errorf("写入repositories数据失败: %w", err)
+	if err := is.writeManifestFiles(tarWriter, allManifests, allRepositories); err != nil {
+		return fmt.Errorf("写入manifest文件失败: %w", err)
 	}
 
 	utils.Logger().Info("batch download complete", "count", len(imageRefs))

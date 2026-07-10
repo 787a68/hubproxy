@@ -5,9 +5,11 @@ import (
 	"embed"
 	"log"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -28,7 +30,7 @@ var (
 	serviceStartTime = time.Now()
 )
 
-// buildVersion 构建时通过 ldflags 注入；为空则回退到当天日期
+// buildVersion 构建时通过 ldflags 注入；为空则回退到启动当天日期
 var buildVersion = ""
 
 // AppVersion 返回应用版本；buildVersion 由构建系统通过 ldflags 注入
@@ -36,7 +38,7 @@ func AppVersion() string {
 	if v := buildVersion; v != "" {
 		return v
 	}
-	return time.Now().Format("2006.01.02")
+	return serviceStartTime.Format("2006.01.02")
 }
 
 // serveEmbedFile 提供嵌入的静态文件
@@ -46,14 +48,9 @@ func serveEmbedFile(c *gin.Context, filename string) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	contentType := "text/html; charset=utf-8"
-	switch {
-	case strings.HasSuffix(filename, ".ico"):
-		contentType = "image/x-icon"
-	case strings.HasSuffix(filename, ".css"):
-		contentType = "text/css; charset=utf-8"
-	case strings.HasSuffix(filename, ".js"):
-		contentType = "application/javascript; charset=utf-8"
+	contentType := mime.TypeByExtension(filepath.Ext(filename))
+	if contentType == "" {
+		contentType = "application/octet-stream"
 	}
 	c.Data(http.StatusOK, contentType, data)
 }

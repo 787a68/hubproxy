@@ -10,17 +10,15 @@
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/public/nav.css">
     <style>
-        .main { flex: 1; padding: 2rem 1rem; }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1200px; }
         h1 { color: var(--foreground); font-weight: bold; margin-bottom: 30px; text-align: center; }
         .search-container { margin-bottom: 30px; }
-        .btn { display: inline-block; padding: 0.375rem 0.75rem; margin-bottom: 0; font-size: 1rem; font-weight: 400; line-height: 1.5; text-align: center; white-space: nowrap; vertical-align: middle; cursor: pointer; border: 1px solid transparent; border-radius: 0.375rem; text-decoration: none; transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out; }
         .input-group { position: relative; display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%; max-width: 600px; margin: 0 auto; }
         .input-group-append { display: flex; width: 100%; justify-content: center; }
         .form-control { display: block; width: 100%; background-color: var(--input); color: var(--foreground); border: 1px solid var(--border); border-radius: 20px; padding: 12px 20px; height: 46px; transition: all 0.2s; font-size: 1rem; }
         .form-control:focus { background-color: var(--input); color: var(--foreground); border-color: var(--ring); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); outline: 0; }
         .search-button { border-radius: 20px; padding: 12px 40px; background-color: var(--primary); color: var(--primary-foreground); border: none; transition: all 0.3s ease; height: 46px; font-size: 1rem; font-weight: 500; cursor: pointer; min-width: 120px; }
-        .search-button:hover { transform: scale(1.05); background-color: #1d4ed8; }
+        .search-button:hover { transform: scale(1.05); background-color: var(--primary-hover); }
         .result-card { background-color: var(--card); border-radius: 10px; padding: 20px; margin-bottom: 20px; transition: all 0.3s ease; cursor: pointer; border: 1px solid var(--border); }
         .result-card:hover { transform: translateY(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
         .result-title { font-size: 1.2rem; font-weight: 500; margin-bottom: 10px; color: var(--primary); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -35,13 +33,11 @@
         .meta-item { display: inline-flex; align-items: center; white-space: nowrap; color: var(--muted-foreground); }
         .meta-item .icon { opacity: 0.7; }
         .loading { text-align: center; padding: 20px; display: none; }
-        .loading-spinner { width: 40px; height: 40px; border: 4px solid var(--muted); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #toast { position: fixed; top: 10%; left: 50%; transform: translate(-50%, -50%); background-color: var(--primary); color: var(--primary-foreground); padding: 15px 20px; border-radius: 10px; font-size: 90%; z-index: 1000; display: none; }
+        .loading-spinner-large { width: 40px; height: 40px; border: 4px solid var(--muted); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
         .pagination { display: flex; justify-content: center; margin-top: 20px; }
         .pagination button { margin: 0 5px; padding: 5px 15px; border: none; border-radius: 5px; background-color: var(--primary); color: var(--primary-foreground); cursor: pointer; transition: all 0.3s ease; }
         .pagination button:disabled { background-color: var(--muted); color: var(--muted-foreground); cursor: not-allowed; }
-        .pagination button:hover:not(:disabled) { transform: scale(1.05); background-color: #1d4ed8; }
+        .pagination button:hover:not(:disabled) { transform: scale(1.05); background-color: var(--primary-hover); }
         .tag-list { margin-top: 20px; display: none; }
         .tag-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; padding: 20px; background-color: var(--card); border-radius: 10px; border: 1px solid var(--border); flex-direction: column; }
         .tag-info { flex: 1; width: 100%; }
@@ -76,17 +72,7 @@
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-container">
-            <a href="/" class="logo"><div class="logo-icon">⚡</div>加速服务</a>
-            <button class="mobile-menu-toggle" id="mobileMenuToggle">☰</button>
-            <div class="nav-links" id="navLinks">
-                <a href="/" class="nav-link">🚀 GitHub加速</a>
-                <a href="/images.html" class="nav-link">🐳 离线镜像下载</a>
-                <a href="/search.html" class="nav-link active">🔍 镜像搜索</a>
-            </div>
-        </div>
-    </nav>
+    <div id="nav-placeholder"></div>
 
     <main class="main">
         <div class="container">
@@ -95,11 +81,11 @@
                 <div class="input-group">
                     <input type="text" class="form-control" id="searchInput" placeholder="输入镜像名称搜索...">
                     <div class="input-group-append">
-                        <button class="btn search-button" id="searchButton">搜索</button>
+                        <button class="search-button" id="searchButton">搜索</button>
                     </div>
                 </div>
             </div>
-            <div class="loading"><div class="loading-spinner"></div><p>正在加载...</p></div>
+            <div class="loading"><div class="loading-spinner-large"></div><p>正在加载...</p></div>
             <div class="back-to-search">← 返回搜索结果</div>
             <div class="search-results">
                 <div id="searchResults"></div>
@@ -112,7 +98,7 @@
         </div>
     </main>
 
-    <div id="toast"></div>
+    <div id="toast" class="toast"></div>
     <script src="/public/nav.js"></script>
     <script>
         const formatUtils = {
@@ -179,16 +165,15 @@
         document.addEventListener('click', (e) => {
             if (e.target.id === 'tagPrevPage') { if (currentTagPage > 1) { currentTagPage--; loadTagPage(); } }
             else if (e.target.id === 'tagNextPage') { if (currentTagPage < totalTagPages) { currentTagPage++; loadTagPage(); } }
+            // 处理复制按钮点击
+            if (e.target.classList.contains('copy-button')) {
+                const text = e.target.getAttribute('data-copy-text');
+                if (text) { copyToClipboard(text); }
+            }
         });
 
         function showLoading() { document.querySelector('.loading').style.display = 'block'; }
         function hideLoading() { document.querySelector('.loading').style.display = 'none'; }
-        function showToast(message) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.style.display = 'block';
-            setTimeout(() => { toast.style.display = 'none'; }, 3000);
-        }
 
         function updatePagination(config = {}) {
             const { currentPage: page = currentPage, totalPages: total = totalPages, prefix = '' } = config;
@@ -220,7 +205,7 @@
             jumpInput.id = prefix ? `${prefix}JumpPage` : 'jumpPage';
             jumpInput.style.cssText = 'width: 60px; padding: 4px; border-radius: 4px; border: 1px solid var(--border); background-color: var(--input); color: var(--foreground);';
             const jumpButton = document.createElement('button');
-            jumpButton.textContent = '跳转'; jumpButton.className = 'btn search-button'; jumpButton.style.padding = '4px 8px';
+            jumpButton.textContent = '跳转'; jumpButton.className = 'search-button'; jumpButton.style.padding = '4px 8px';
             jumpButton.onclick = () => handlePageJump(jumpInput, prefix, total);
             container.append(pageText, jumpInput, jumpButton);
             return container;
@@ -243,7 +228,7 @@
             const inputPage = parseInt(jumpInput.value);
             const maxPage = prefix === 'tag' ? total : Math.min(total, 100);
             if (!inputPage || inputPage < 1 || inputPage > maxPage) {
-                showToast(`请输入有效的${prefix === 'tag' ? '页码' : '页码 (最多100页)'}`);
+                showToast(`请输入有效的页码`);
                 return;
             }
             if (prefix === 'tag') { currentTagPage = inputPage; loadTagPage(); }
@@ -300,7 +285,7 @@
         function displayResults(results, targetRepo = '') {
             const resultsContainer = document.getElementById('searchResults');
             resultsContainer.innerHTML = '';
-            if (!results || results.length === 0) { resultsContainer.innerHTML = '<div class="text-center">未找到相关镜像</div>'; return; }
+            if (!results || results.length === 0) { resultsContainer.innerHTML = '<div style="text-align:center;">未找到相关镜像</div>'; return; }
             results.sort((a, b) => {
                 if (targetRepo) {
                     const aName = (a.name || a.repo_name || '').toLowerCase();
@@ -327,13 +312,14 @@
                 const organization = result.affiliation || '';
                 const badges = [];
                 if (result.is_official) badges.push('<span class="badge badge-official">官方</span>');
-                if (organization) badges.push(`<span class="badge badge-organization">By ${organization}</span>`);
+                if (organization) badges.push(`<span class="badge badge-organization">By ${escapeHtml(organization)}</span>`);
                 const stats = [];
                 if (starCount > 0) stats.push(`<span class="meta-item">⭐ ${formatUtils.formatNumber(starCount)}</span>`);
                 if (pullCount > 0) stats.push(`<span class="meta-item">⬇️ ${formatUtils.formatNumber(pullCount)}+</span>`);
+                // 使用 escapeHtml 防止 XSS
                 card.innerHTML = `
-                    <div class="result-title">${displayName} ${badges.join(' ')}</div>
-                    <div class="result-description">${description}</div>
+                    <div class="result-title">${escapeHtml(displayName)} ${badges.join(' ')}</div>
+                    <div class="result-description">${escapeHtml(description)}</div>
                     <div class="result-meta">
                         <div class="meta-stats">${stats.join(' ')} ${lastUpdated ? `<span class="meta-item">更新于 ${formatUtils.formatTimeAgo(lastUpdated)}</span>` : ''}</div>
                         ${pullsLastWeek > 0 ? `<div class="meta-pulls"><div>本周拉取次数</div><div class="pulls-count">${formatUtils.formatNumber(pullsLastWeek)}</div></div>` : ''}
@@ -387,19 +373,21 @@
             const tagList = document.getElementById('tagList');
             const repoInfo = parseRepositoryInfo(currentRepo);
             const { fullRepoName } = repoInfo;
+            const escapedFullRepoName = escapeHtml(fullRepoName);
+            const pullCmd = `docker pull ${fullRepoName}`;
             let header = `
                 <div class="tag-header"><div class="tag-info">
-                    <div class="tag-title">${fullRepoName}
+                    <div class="tag-title">${escapedFullRepoName}
                         ${currentRepo.is_official ? '<span class="badge badge-official">官方</span>' : ''}
-                        ${currentRepo.affiliation ? `<span class="badge badge-organization">By ${currentRepo.affiliation}</span>` : ''}
+                        ${currentRepo.affiliation ? `<span class="badge badge-organization">By ${escapeHtml(currentRepo.affiliation)}</span>` : ''}
                     </div>
-                    <div class="tag-description">${currentRepo.short_description || '暂无描述'}</div>
+                    <div class="tag-description">${escapeHtml(currentRepo.short_description || '暂无描述')}</div>
                     <div class="tag-meta">
                         ${currentRepo.star_count > 0 ? `<span class="meta-item">⭐ ${formatUtils.formatNumber(currentRepo.star_count)}</span>` : ''}
                         ${currentRepo.pull_count > 0 ? `<span class="meta-item">⬇️ ${formatUtils.formatNumber(currentRepo.pull_count)}+</span>` : ''}
                         ${currentRepo.last_updated ? `<span class="meta-item">更新于 ${formatUtils.formatTimeAgo(currentRepo.last_updated)}</span>` : ''}
                     </div>
-                    <div class="tag-pull-command">docker pull ${fullRepoName}<button class="copy-button" onclick="copyToClipboard('docker pull ${fullRepoName}')">复制</button></div>
+                    <div class="tag-pull-command">${escapeHtml(pullCmd)}<button class="copy-button" data-copy-text="${escapeHtml(pullCmd)}">复制</button></div>
                 </div></div>
                 <div class="tag-search-container">
                     <input type="text" class="tag-search-input" placeholder="输入关键词搜索标签，支持模糊匹配..." oninput="filterTags(this.value)">
@@ -420,7 +408,7 @@
             const tagsContainer = document.getElementById('tagsContainer');
             const repoInfo = parseRepositoryInfo(currentRepo);
             const { fullRepoName } = repoInfo;
-            if (filteredTags.length === 0) { tagsContainer.innerHTML = '<div class="text-center" style="padding: 20px;">未找到匹配的标签</div>'; return; }
+            if (filteredTags.length === 0) { tagsContainer.innerHTML = '<div style="text-align:center;padding:20px;">未找到匹配的标签</div>'; return; }
             const BATCH_SIZE = 50;
             if (filteredTags.length <= BATCH_SIZE) {
                 renderTagsBatch(filteredTags, fullRepoName, tagsContainer, true);
@@ -442,23 +430,24 @@
         function renderTagsBatch(tags, fullRepoName, container, replaceContent = false) {
             const tagsHtml = tags.map(tag => {
                 const vulnIndicators = Object.entries(tag.vulnerabilities || {})
-                    .map(([level, count]) => count > 0 ? `<span class="vulnerability-dot vulnerability-${level.toLowerCase()}" title="${level}: ${count}"></span>` : '')
+                    .map(([level, count]) => count > 0 ? `<span class="vulnerability-dot vulnerability-${level.toLowerCase()}" title="${escapeHtml(level)}: ${count}"></span>` : '')
                     .join('');
                 const images = tag.images || [];
                 const architectures = images.map(img => {
                     const arch = `${img.os}/${img.architecture}${img.variant ? '/' + img.variant : ''}`;
                     const size = formatUtils.formatSize(img.size);
-                    return `<div class="arch-item" title="大小: ${size}">${arch}</div>`;
+                    return `<div class="arch-item" title="大小: ${escapeHtml(size)}">${escapeHtml(arch)}</div>`;
                 }).join('');
+                const pullCmd = `docker pull ${fullRepoName}:${tag.name}`;
                 return `
                     <div class="tag-item">
-                        <div class="tag-name">${tag.name} ${vulnIndicators ? `<div class="vulnerability-indicator">${vulnIndicators}</div>` : ''}</div>
+                        <div class="tag-name">${escapeHtml(tag.name)} ${vulnIndicators ? `<div class="vulnerability-indicator">${vulnIndicators}</div>` : ''}</div>
                         <div class="tag-meta">
                             <span>最后更新: ${formatUtils.formatTimeAgo(tag.last_updated)}</span>
-                            ${tag.last_pusher ? `<span>由 ${tag.last_pusher} 推送</span>` : ''}
+                            ${tag.last_pusher ? `<span>由 ${escapeHtml(tag.last_pusher)} 推送</span>` : ''}
                             ${tag.full_size ? `<span>大小: ${formatUtils.formatSize(tag.full_size)}</span>` : ''}
                         </div>
-                        <div class="tag-pull-command">docker pull ${fullRepoName}:${tag.name}<button class="copy-button" onclick="copyToClipboard('docker pull ${fullRepoName}:${tag.name}')">复制</button></div>
+                        <div class="tag-pull-command">${escapeHtml(pullCmd)}<button class="copy-button" data-copy-text="${escapeHtml(pullCmd)}">复制</button></div>
                         ${architectures ? `<div class="tag-architectures">${architectures}</div>` : ''}
                     </div>
                 `;
@@ -491,10 +480,6 @@
         function clearTagSearch() {
             const searchInput = document.querySelector('.tag-search-input');
             if (searchInput) { searchInput.value = ''; filterTags(''); }
-        }
-
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => { showToast('已复制到剪贴板'); }).catch(() => { showToast('复制失败'); });
         }
 
         const urlParams = new URLSearchParams(window.location.search);

@@ -386,14 +386,19 @@ func buildAuthURL(authHost, requestPath string) string {
 	if authHost == "" {
 		return "https://auth.docker.io" + requestPath
 	}
-	base := "https://" + strings.TrimRight(authHost, "/")
-	if strings.Contains(strings.TrimPrefix(authHost, "https://"), "/") || strings.Contains(strings.TrimPrefix(authHost, "http://"), "/") {
-		if strings.HasPrefix(authHost, "http://") || strings.HasPrefix(authHost, "https://") {
-			return strings.TrimRight(authHost, "/")
-		}
-		return base
+
+	// 已带 scheme 的完整 URL，直接使用
+	if strings.HasPrefix(authHost, "http://") || strings.HasPrefix(authHost, "https://") {
+		return strings.TrimRight(authHost, "/")
 	}
-	return base + requestPath
+
+	// 不带 scheme 但含路径（如 ghcr.io/token），拼接 scheme 后直接使用
+	if strings.Contains(authHost, "/") {
+		return "https://" + strings.TrimRight(authHost, "/")
+	}
+
+	// 纯域名，拼接 requestPath
+	return "https://" + strings.TrimRight(authHost, "/") + requestPath
 }
 
 func detectAuthTargetDomain(c *gin.Context) string {
@@ -418,7 +423,12 @@ func detectAuthTargetDomain(c *gin.Context) string {
 
 // rewriteAuthHeader 重写认证头，将上游认证 URL 替换成代理地址
 func rewriteAuthHeader(authHeader, proxyHost, scheme string) string {
-	for _, host := range []string{"https://auth.docker.io", "https://ghcr.io", "https://gcr.io", "https://quay.io"} {
+	hosts := []string{"https://auth.docker.io"}
+	cfg := config.GetConfig()
+	for domain := range cfg.Registries {
+		hosts = append(hosts, "https://"+domain)
+	}
+	for _, host := range hosts {
 		authHeader = strings.ReplaceAll(authHeader, host, scheme+"://"+proxyHost)
 	}
 	return authHeader

@@ -103,32 +103,7 @@ func DefaultConfig() *AppConfig {
 		}{
 			MaxImages: 10,
 		},
-		Registries: map[string]RegistryMapping{
-			"ghcr.io": {
-				Upstream: "ghcr.io",
-				AuthHost: "ghcr.io/token",
-				AuthType: "github",
-				Enabled:  true,
-			},
-			"gcr.io": {
-				Upstream: "gcr.io",
-				AuthHost: "gcr.io/v2/token",
-				AuthType: "google",
-				Enabled:  true,
-			},
-			"quay.io": {
-				Upstream: "quay.io",
-				AuthHost: "quay.io/v2/auth",
-				AuthType: "quay",
-				Enabled:  true,
-			},
-			"registry.k8s.io": {
-				Upstream: "registry.k8s.io",
-				AuthHost: "registry.k8s.io",
-				AuthType: "anonymous",
-				Enabled:  true,
-			},
-		},
+		Registries: defaultRegistries(),
 		Cache:    "20m",
 		LogLevel: "info",
 		LogFile:  "",
@@ -139,17 +114,7 @@ func DefaultConfig() *AppConfig {
 
 // GetConfig 无锁获取当前配置快照（hot path，零分配）
 func GetConfig() *AppConfig {
-	if cfg := configHolder.Load(); cfg != nil {
-		return cfg
-	}
-	cfg := DefaultConfig()
-	configHolder.Store(cfg)
-	return cfg
-}
-
-// setConfig 发布配置快照（启动时一次性调用）
-func setConfig(cfg *AppConfig) {
-	configHolder.Store(cfg)
+	return configHolder.Load()
 }
 
 // configFilePath 返回配置文件路径
@@ -174,19 +139,49 @@ func LoadConfig() error {
 	}
 
 	overrideFromEnv(cfg)
-	mergeDefaultConfig(cfg)
+	mergeDefaultRegistries(cfg)
 	applyDerived(cfg)
-	setConfig(cfg)
+	configHolder.Store(cfg)
 	return nil
 }
 
-func mergeDefaultConfig(cfg *AppConfig) {
-	defaults := DefaultConfig()
+// defaultRegistries 返回默认 registry 映射，避免重复构造完整 AppConfig
+func defaultRegistries() map[string]RegistryMapping {
+	return map[string]RegistryMapping{
+		"ghcr.io": {
+			Upstream: "ghcr.io",
+			AuthHost: "ghcr.io/token",
+			AuthType: "github",
+			Enabled:  true,
+		},
+		"gcr.io": {
+			Upstream: "gcr.io",
+			AuthHost: "gcr.io/v2/token",
+			AuthType: "google",
+			Enabled:  true,
+		},
+		"quay.io": {
+			Upstream: "quay.io",
+			AuthHost: "quay.io/v2/auth",
+			AuthType: "quay",
+			Enabled:  true,
+		},
+		"registry.k8s.io": {
+			Upstream: "registry.k8s.io",
+			AuthHost: "registry.k8s.io",
+			AuthType: "anonymous",
+			Enabled:  true,
+		},
+	}
+}
+
+// mergeDefaultRegistries 合并默认 registry 映射（go-toml 对 map 整体替换，需补全缺失项）
+func mergeDefaultRegistries(cfg *AppConfig) {
 	if cfg.Registries == nil {
-		cfg.Registries = defaults.Registries
+		cfg.Registries = defaultRegistries()
 		return
 	}
-	for name, mapping := range defaults.Registries {
+	for name, mapping := range defaultRegistries() {
 		if _, ok := cfg.Registries[name]; !ok {
 			cfg.Registries[name] = mapping
 		}

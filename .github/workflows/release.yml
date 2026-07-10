@@ -21,7 +21,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: stable
-          cache-dependency-path: "src/go.sum"
           
       - name: 获取版本号
         id: version
@@ -63,6 +62,10 @@ jobs:
         run: |
           cd src
           VERSION=${{ steps.version.outputs.version }}
+          
+          # 自动生成 go.mod/go.sum 并下载依赖
+          go mod init hubproxy
+          go mod tidy
           
           # Linux AMD64
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X 'main.buildVersion=${VERSION}'" -trimpath -o ../build/hubproxy/hubproxy-linux-amd64 .

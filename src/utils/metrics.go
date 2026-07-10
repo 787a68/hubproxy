@@ -52,6 +52,5 @@ func MetricsHandler(c *gin.Context) {
 	add("hubproxy_github_requests_total", m.GitHubReqs.Load(), "GitHub proxy requests", "counter")
 	add("hubproxy_search_requests_total", m.SearchReqs.Load(), "Search API requests", "counter")
 
-	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	c.Data(200, "text/plain; version=0.0.4", sb)
+	c.Data(200, "text/plain; version=0.0.4; charset=utf-8", sb)
 }
