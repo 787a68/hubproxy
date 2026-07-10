@@ -52,7 +52,7 @@ jobs:
           mkdir -p build/hubproxy
           
       - name: 安装 UPX
-        uses: crazy-max/ghaction-upx@v5
+        uses: crazy-max/ghaction-upx@v4
         with:
           install-only: true
 
