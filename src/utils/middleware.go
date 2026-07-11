@@ -57,7 +57,7 @@ func RequestLogger(slowThreshold time.Duration) gin.HandlerFunc {
 			"path", c.Request.URL.Path,
 			"status", status,
 			"latency", latency.String(),
-			"ip", extractIP(c.ClientIP()),
+			"ip", c.ClientIP(),
 			"size", c.Writer.Size(),
 		}
 

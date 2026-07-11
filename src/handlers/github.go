@@ -14,7 +14,7 @@ import (
 
 var (
 	// githubExps GitHub/HuggingFace 等加速 URL 匹配正则
-	// 索引 1 = releases/archive，2 = blob/raw，3 = info/git-*，...
+	// githubExpIndex 记录每个正则的语义索引，用于解耦数组顺序与逻辑判断
 	githubExps = []*regexp.Regexp{
 		regexp.MustCompile(`^(?:https?://)?github\.com/([^/]+)/([^/]+)/(?:releases|archive)/.*`),
 		regexp.MustCompile(`^(?:https?://)?github\.com/([^/]+)/([^/]+)/(?:blob|raw)/.*`),
@@ -27,6 +27,9 @@ var (
 		regexp.MustCompile(`^(?:https?://)?download\.docker\.com/([^/]+)/.*\.(tgz|zip)`),
 		regexp.MustCompile(`^(?:https?://)?(github|opengraph)\.githubassets\.com/([^/]+)/.+?`),
 	}
+
+	// githubExpBlobRaw 是 blob/raw 转换对应的正则索引
+	githubExpBlobRaw = 1
 )
 
 // 全局变量：被阻止的内容类型
@@ -76,7 +79,7 @@ func GitHubProxyHandler(c *gin.Context) {
 	}
 
 	// 将 blob 链接转换为 raw 链接（复用已匹配的索引，避免二次正则匹配）
-	if matchedIdx == 1 {
+	if matchedIdx == githubExpBlobRaw {
 		rawPath = strings.Replace(rawPath, "/blob/", "/raw/", 1)
 	}
 
@@ -172,76 +175,64 @@ func proxyGitHubWithRedirect(c *gin.Context, u string, redirectCount int) {
 		realHost = "https://" + realHost
 	}
 
-	// 处理.sh和.ps1文件的智能处理
-	if strings.HasSuffix(strings.ToLower(u), ".sh") || strings.HasSuffix(strings.ToLower(u), ".ps1") {
+	// 处理重定向（在写入响应体之前统一处理，避免 .sh/.ps1 分支丢弃已处理内容）
+	if location := resp.Header.Get("Location"); location != "" {
+		if _, m := CheckGitHubURL(location); m != nil {
+			// 可识别的 GitHub/HF 重定向，改写为代理相对路径返回给客户端
+			for k, vs := range resp.Header {
+				if isHopByHopHeader(k) {
+					continue
+				}
+				for _, v := range vs {
+					c.Header(k, v)
+				}
+			}
+			c.Header("Location", "/"+location)
+			c.Status(resp.StatusCode)
+			return
+		}
+		// 其他重定向：递归跟随上游（不返回给客户端）
+		proxyGitHubWithRedirect(c, location, redirectCount+1)
+		return
+	}
+
+	// 复制响应头（跳过逐跳头部）
+	for key, values := range resp.Header {
+		if isHopByHopHeader(key) {
+			continue
+		}
+		for _, value := range values {
+			c.Header(key, value)
+		}
+	}
+
+	// 处理.sh和.ps1文件的智能处理（URL 后缀判断）
+	lowerURL := strings.ToLower(u)
+	if strings.HasSuffix(lowerURL, ".sh") || strings.HasSuffix(lowerURL, ".ps1") {
 		isGzipCompressed := resp.Header.Get("Content-Encoding") == "gzip"
 
-		processedBody, processedSize, err := utils.ProcessSmart(resp.Body, isGzipCompressed, realHost)
+		processedBody, _, err := utils.ProcessSmart(resp.Body, isGzipCompressed, realHost)
 		if err != nil {
 			utils.Logger().Warn("script processing failed", "url", u, "err", err)
 			c.String(http.StatusBadGateway, "Script processing failed")
 			return
 		}
 
-		// 智能设置响应头
-		if processedSize > 0 {
-			resp.Header.Del("Content-Length")
-			resp.Header.Del("Content-Encoding")
-			resp.Header.Set("Transfer-Encoding", "chunked")
-		}
-
-		// 复制其他响应头
-		for key, values := range resp.Header {
-			if isHopByHopHeader(key) {
-				continue
-			}
-			for _, value := range values {
-				c.Header(key, value)
-			}
-		}
-
-		// 处理重定向
-		if location := resp.Header.Get("Location"); location != "" {
-			if _, m := CheckGitHubURL(location); m != nil {
-				c.Header("Location", "/"+location)
-			} else {
-				proxyGitHubWithRedirect(c, location, redirectCount+1)
-				return
-			}
-		}
-
+		// 处理后内容长度可能变化，移除原始 Content-Length/Encoding
+		c.Header("Content-Length", "")
+		c.Header("Content-Encoding", "")
 		c.Status(resp.StatusCode)
 
-		// 输出处理后的内容
 		if _, err := io.Copy(c.Writer, processedBody); err != nil {
-			return
+			utils.Logger().Warn("write processed script body failed", "url", u, "err", err)
 		}
-	} else {
-		// 复制响应头
-		for key, values := range resp.Header {
-			if isHopByHopHeader(key) {
-				continue
-			}
-			for _, value := range values {
-				c.Header(key, value)
-			}
-		}
+		return
+	}
 
-		// 处理重定向
-		if location := resp.Header.Get("Location"); location != "" {
-			if _, m := CheckGitHubURL(location); m != nil {
-				c.Header("Location", "/"+location)
-			} else {
-				proxyGitHubWithRedirect(c, location, redirectCount+1)
-				return
-			}
-		}
+	c.Status(resp.StatusCode)
 
-		c.Status(resp.StatusCode)
-
-		// 直接流式转发
-		if _, err := io.Copy(c.Writer, resp.Body); err != nil {
-			utils.Logger().Warn("forward response body failed", "url", u, "err", err)
-		}
+	// 直接流式转发
+	if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+		utils.Logger().Warn("forward response body failed", "url", u, "err", err)
 	}
 }

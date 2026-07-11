@@ -46,8 +46,8 @@
         .tag-search-input { width: 100%; padding: 12px 40px 12px 15px; border-radius: 8px; border: 1px solid var(--border); background-color: var(--input); color: var(--foreground); font-size: 1rem; transition: all 0.3s ease; }
         .tag-search-input:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px rgba(37,99,235,0.2); }
         .tag-search-input::placeholder { color: var(--muted-foreground); font-style: italic; }
-        .tag-search-clear { position: absolute; right: 25px; top: 50%; transform: translateY(-5%); background: none; border: none; color: var(--foreground); cursor: pointer; padding: 8px; opacity: 0.6; font-size: 1.2rem; transition: all 0.3s ease; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
-        .tag-search-clear:hover { opacity: 1; background-color: rgba(37,99,235,0.1); transform: translateY(-5%) scale(1.1); }
+    .tag-search-clear { position: absolute; right: 25px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--foreground); cursor: pointer; padding: 8px; opacity: 0.6; font-size: 1.2rem; transition: all 0.3s ease; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
+    .tag-search-clear:hover { opacity: 1; background-color: rgba(37,99,235,0.1); transform: translateY(-50%) scale(1.1); }
         .tag-title { font-size: 1.5rem; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
         .tag-description { color: var(--foreground); opacity: 0.8; }
         .tag-pull-command { background-color: var(--input); padding: 10px 15px; border-radius: 5px; font-family: monospace; margin-top: 10px; position: relative; }
@@ -155,6 +155,7 @@
 
         let currentPage = 1, totalPages = 1, currentQuery = '', currentRepo = null;
         let currentTagPage = 1, totalTagPages = 1;
+        let searchScrollY = 0;
 
         document.getElementById('searchButton').addEventListener('click', () => { currentPage = 1; performSearch(); });
         document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') { currentPage = 1; performSearch(); } });
@@ -217,8 +218,8 @@
             const isTagPagination = prefix === 'tag';
             const maxDisplayPages = isTagPagination ? total : Math.min(total, 100);
             const pageTextContent = isTagPagination
-                ? `第 ${page} 页` + (total > page ? ` (至少 ${total} 页)` : ` (共 ${total} 页)`)
-                : `第 ${page} / ${maxDisplayPages} 页 共 ${maxDisplayPages} 页` + (total > 100 ? ' (最多100页)' : '');
+                ? `第 ${page} / ${total} 页`
+                : `第 ${page} / ${maxDisplayPages} 页` + (total > 100 ? ' (最多100页)' : '');
             pageText.textContent = pageTextContent;
             jumpInput.max = maxDisplayPages;
             jumpInput.value = page;
@@ -251,13 +252,16 @@
             document.querySelector('.tag-list').style.display = 'none';
             document.querySelector('.back-to-search').style.display = 'none';
             document.querySelector('.search-container').style.display = 'block';
+            window.scrollTo(0, searchScrollY);
         }
 
         function showTagList() {
+            searchScrollY = window.scrollY;
             document.querySelector('.search-results').style.display = 'none';
             document.querySelector('.tag-list').style.display = 'block';
             document.querySelector('.back-to-search').style.display = 'block';
             document.querySelector('.search-container').style.display = 'none';
+            window.scrollTo(0, 0);
         }
 
         async function performSearch() {
@@ -286,18 +290,18 @@
             const resultsContainer = document.getElementById('searchResults');
             resultsContainer.innerHTML = '';
             if (!results || results.length === 0) { resultsContainer.innerHTML = '<div style="text-align:center;">未找到相关镜像</div>'; return; }
-            results.sort((a, b) => {
-                if (targetRepo) {
+            // 保留后端相关性排序；仅在指定 targetRepo 时将精确匹配前置
+            if (targetRepo) {
+                results.sort((a, b) => {
                     const aName = (a.name || a.repo_name || '').toLowerCase();
                     const bName = (b.name || b.repo_name || '').toLowerCase();
                     const aMatch = aName === targetRepo || aName.endsWith('/' + targetRepo);
                     const bMatch = bName === targetRepo || bName.endsWith('/' + targetRepo);
                     if (aMatch && !bMatch) return -1;
                     if (!aMatch && bMatch) return 1;
-                }
-                if (a.is_official !== b.is_official) return b.is_official - a.is_official;
-                return b.pull_count - a.pull_count;
-            });
+                    return 0;
+                });
+            }
             results.forEach(result => {
                 const card = document.createElement('div');
                 card.className = 'result-card';
@@ -456,25 +460,29 @@
             else container.insertAdjacentHTML('beforeend', tagsHtml);
         }
 
+        let filterTagsTimer = null;
         function filterTags(searchText) {
-            if (!window.currentPageTags) return;
-            const searchLower = searchText.toLowerCase();
-            let filteredTags;
-            if (!searchText) { filteredTags = window.currentPageTags; }
-            else {
-                const scoredTags = window.currentPageTags.map(tag => {
-                    const name = tag.name.toLowerCase();
-                    let score = 0;
-                    if (name === searchLower) score += 100;
-                    else if (name.startsWith(searchLower)) score += 50;
-                    else if (name.includes(searchLower)) score += 30;
-                    else if (searchLower.split(/\s+/).some(word => name.includes(word))) score += 10;
-                    return { tag, score };
-                }).filter(item => item.score > 0);
-                scoredTags.sort((a, b) => b.score - a.score);
-                filteredTags = scoredTags.map(item => item.tag);
-            }
-            renderFilteredTags(filteredTags);
+            if (filterTagsTimer) clearTimeout(filterTagsTimer);
+            filterTagsTimer = setTimeout(() => {
+                if (!window.currentPageTags) return;
+                const searchLower = searchText.toLowerCase();
+                let filteredTags;
+                if (!searchText) { filteredTags = window.currentPageTags; }
+                else {
+                    const scoredTags = window.currentPageTags.map(tag => {
+                        const name = tag.name.toLowerCase();
+                        let score = 0;
+                        if (name === searchLower) score += 100;
+                        else if (name.startsWith(searchLower)) score += 50;
+                        else if (name.includes(searchLower)) score += 30;
+                        else if (searchLower.split(/\s+/).some(word => name.includes(word))) score += 10;
+                        return { tag, score };
+                    }).filter(item => item.score > 0);
+                    scoredTags.sort((a, b) => b.score - a.score);
+                    filteredTags = scoredTags.map(item => item.tag);
+                }
+                renderFilteredTags(filteredTags);
+            }, 200);
         }
 
         function clearTagSearch() {

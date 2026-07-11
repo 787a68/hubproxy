@@ -101,8 +101,10 @@
                 <strong>Docker 官方镜像：</strong>docker pull <span class="domain-base"></span>/nginx
                 <strong>Docker 镜像：</strong>docker pull <span class="domain-base"></span>/user/image
                 <strong>ghcr.io 镜像：</strong>docker pull <span class="domain-base"></span>/ghcr.io/user/image
+                <strong>GCR 镜像：</strong>docker pull <span class="domain-base"></span>/gcr.io/project/image
                 <strong>Quay.io 镜像：</strong>docker pull <span class="domain-base"></span>/quay.io/org/image
                 <strong>Kubernetes 镜像：</strong>docker pull <span class="domain-base"></span>/registry.k8s.io/pause:3.9
+                <strong>Hugging Face：</strong>https://<span class="domain-base"></span>/https://huggingface.co/user/model/resolve/main/file.bin
             </div>
         </div>
     </div>
@@ -170,7 +172,8 @@
             const modal = document.getElementById('dockerModal');
             document.getElementById('dockerButton').onclick = () => modal.style.display = "flex";
             document.getElementById('closeModal').onclick = () => modal.style.display = "none";
-            window.onclick = (event) => { if (event.target == modal) modal.style.display = "none"; };
+            modal.addEventListener('click', (event) => { if (event.target == modal) modal.style.display = "none"; });
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal.style.display === 'flex') modal.style.display = "none"; });
 
             document.getElementById('formatButton').addEventListener('click', formatGithubLink);
             document.getElementById('copyButton').addEventListener('click', copyLink);

@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"runtime"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,6 +23,20 @@ type Metrics struct {
 }
 
 var GlobalMetrics = &Metrics{}
+
+// processStartTime 进程启动时间，用于计算 uptime
+var processStartTime = time.Now()
+
+// runtimeStats 采集 Go 运行时指标（按需调用，非 hot path）
+func runtimeStats() (goroutines, memAllocMB, memSysMB, heapObjects, uptimeSec int64) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return int64(runtime.NumGoroutine()),
+		int64(m.Alloc / 1024 / 1024),
+		int64(m.Sys / 1024 / 1024),
+		int64(m.HeapObjects),
+		int64(time.Since(processStartTime).Seconds())
+}
 
 // MetricsHandler 暴露 Prometheus 文本格式指标
 // 仅 on-demand 计算，hot path 仅 atomic 计数
@@ -51,6 +67,14 @@ func MetricsHandler(c *gin.Context) {
 	add("hubproxy_docker_blob_requests_total", m.DockerBlobReqs.Load(), "Docker blob API calls", "counter")
 	add("hubproxy_github_requests_total", m.GitHubReqs.Load(), "GitHub proxy requests", "counter")
 	add("hubproxy_search_requests_total", m.SearchReqs.Load(), "Search API requests", "counter")
+
+	// Go 运行时指标
+	goroutines, memAllocMB, memSysMB, heapObjects, uptimeSec := runtimeStats()
+	add("hubproxy_go_goroutines", goroutines, "Number of goroutines", "gauge")
+	add("hubproxy_go_mem_alloc_mb", memAllocMB, "Allocated memory in MB", "gauge")
+	add("hubproxy_go_mem_sys_mb", memSysMB, "System memory in MB", "gauge")
+	add("hubproxy_go_heap_objects", heapObjects, "Heap objects count", "gauge")
+	add("hubproxy_uptime_seconds", uptimeSec, "Process uptime in seconds", "gauge")
 
 	c.Data(200, "text/plain; version=0.0.4; charset=utf-8", sb)
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -61,8 +62,9 @@ type AppConfig struct {
 	LogFile string `toml:"logFile"`
 
 	// 解析后的派生字段（不来自 TOML，加载时计算）
-	parsedTTL time.Duration
-	cacheOn   bool
+	parsedTTL   time.Duration
+	cacheOn     bool
+	sortedDomains []string // 按长度降序排列的 registry 域名，保证最长前缀匹配
 }
 
 // ParsedTTL 返回解析后的缓存 TTL
@@ -70,6 +72,9 @@ func (c *AppConfig) ParsedTTL() time.Duration { return c.parsedTTL }
 
 // CacheEnabled 返回缓存是否启用
 func (c *AppConfig) CacheEnabled() bool { return c.cacheOn }
+
+// SortedDomains 返回按长度降序排列的 registry 域名列表，用于最长前缀匹配
+func (c *AppConfig) SortedDomains() []string { return c.sortedDomains }
 
 // 全局不可变配置快照，通过 atomic.Value 实现无锁读取
 var configHolder atomic.Pointer[AppConfig]
@@ -198,6 +203,15 @@ func applyDerived(cfg *AppConfig) {
 			cfg.parsedTTL = 20 * time.Minute
 		}
 	}
+	// 预计算排序后的域名列表（降序），保证最长前缀匹配
+	domains := make([]string, 0, len(cfg.Registries))
+	for d := range cfg.Registries {
+		domains = append(domains, d)
+	}
+	sort.Slice(domains, func(i, j int) bool {
+		return len(domains[i]) > len(domains[j])
+	})
+	cfg.sortedDomains = domains
 }
 
 // overrideFromEnv 从环境变量覆盖配置

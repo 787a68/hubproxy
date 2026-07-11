@@ -3,6 +3,7 @@
 name="hubproxy"
 description="Docker and GitHub acceleration proxy server"
 command="/usr/bin/hubproxy"
+command_user="hubproxy:hubproxy"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/hubproxy.log"
 error_log="/var/log/hubproxy.log"

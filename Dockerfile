@@ -28,8 +28,7 @@ LABEL org.opencontainers.image.title="HubProxy" \
       org.opencontainers.image.source="https://github.com/787a68/hubproxy" \
       org.opencontainers.image.licenses="MIT"
 
-RUN adduser -D -u 1000 hubproxy && \
-    apk add --no-cache wget
+RUN adduser -D -u 1000 hubproxy
 
 WORKDIR /app
 

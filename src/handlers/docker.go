@@ -249,10 +249,10 @@ func InitDockerProxy() {
 
 // ===== 多 Registry 检测 =====
 
-// detectRegistryDomain 检测 Registry 域名
+// detectRegistryDomain 检测 Registry 域名（按域名长度降序匹配，保证最长前缀优先）
 func detectRegistryDomain(path string) (string, string) {
 	cfg := config.GetConfig()
-	for domain := range cfg.Registries {
+	for _, domain := range cfg.SortedDomains() {
 		if strings.HasPrefix(path, domain+"/") {
 			return domain, strings.TrimPrefix(path, domain+"/")
 		}
@@ -403,33 +403,40 @@ func buildAuthURL(authHost, requestPath string) string {
 
 func detectAuthTargetDomain(c *gin.Context) string {
 	service := c.Query("service")
+	if service == "" {
+		return ""
+	}
+	// 精确匹配配置中的 registry 域名
 	if _, ok := getRegistryMapping(service); ok {
 		return service
 	}
-	if strings.Contains(service, "ghcr.io") {
-		return "ghcr.io"
-	}
-	if strings.Contains(service, "gcr.io") {
-		return "gcr.io"
-	}
-	if strings.Contains(service, "quay.io") {
-		return "quay.io"
-	}
-	if strings.Contains(service, "registry.k8s.io") {
-		return "registry.k8s.io"
+	// 后缀匹配：service 可能含路径（如 gcr.io/v2），取 host 部分再匹配
+	for _, domain := range config.GetConfig().SortedDomains() {
+		if service == domain || strings.HasSuffix(service, "."+domain) {
+			return domain
+		}
 	}
 	return ""
 }
 
 // rewriteAuthHeader 重写认证头，将上游认证 URL 替换成代理地址
 func rewriteAuthHeader(authHeader, proxyHost, scheme string) string {
-	hosts := []string{"https://auth.docker.io"}
-	cfg := config.GetConfig()
-	for domain := range cfg.Registries {
-		hosts = append(hosts, "https://"+domain)
-	}
+	// 预计算的替换列表：auth.docker.io + 配置中的 registry 域名
+	hosts := rewriteAuthHosts
 	for _, host := range hosts {
 		authHeader = strings.ReplaceAll(authHeader, host, scheme+"://"+proxyHost)
 	}
 	return authHeader
+}
+
+// rewriteAuthHosts 在配置加载后预计算，避免热路径上每次分配
+var rewriteAuthHosts []string
+
+// InitRewriteHosts 预计算认证头重写所需的 host 列表（配置加载后调用一次）
+func InitRewriteHosts() {
+	hosts := []string{"https://auth.docker.io"}
+	for _, domain := range config.GetConfig().SortedDomains() {
+		hosts = append(hosts, "https://"+domain)
+	}
+	rewriteAuthHosts = hosts
 }

@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=hubproxy
+Group=hubproxy
 Environment=CONFIG_PATH=/etc/hubproxy/config.toml
 ExecStart=/usr/bin/hubproxy
 Restart=always

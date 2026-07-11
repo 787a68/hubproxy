@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	cleanupInterval = 20 * time.Minute
-	maxIPCacheSize  = 10000
-	ipShardCount    = 64
+	// ipCleanupInterval IP 限流器过期条目清理周期
+	ipCleanupInterval = 20 * time.Minute
+	maxIPCacheSize     = 10000
+	ipShardCount       = 64
 )
 
 // ipRule 单条 IP 限速规则
@@ -105,7 +106,7 @@ func InitGlobalLimiter() *IPRateLimiter {
 
 // cleanupRoutine 定期清理过期条目
 func (i *IPRateLimiter) cleanupRoutine() {
-	ticker := time.NewTicker(cleanupInterval)
+	ticker := time.NewTicker(ipCleanupInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -124,14 +125,6 @@ func (i *IPRateLimiter) cleanupRoutine() {
 			shard.mu.Unlock()
 		}
 	}
-}
-
-// extractIP 从地址中提取纯 IP
-func extractIP(address string) string {
-	if host, _, err := net.SplitHostPort(address); err == nil {
-		return host
-	}
-	return address
 }
 
 // normalizeIPv6 将 IPv6 的接口标识符清零，归并到 /64 段
@@ -218,7 +211,6 @@ func RateLimitMiddleware(limiter *IPRateLimiter) gin.HandlerFunc {
 		}
 
 		ip := c.ClientIP()
-		ip = extractIP(ip)
 
 		ipLimiter := limiter.GetLimiter(ip)
 		if ipLimiter == nil {

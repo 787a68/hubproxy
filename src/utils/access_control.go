@@ -48,8 +48,8 @@ func (ac *AccessController) parseDockerImage(image string) dockerImageInfo {
 					namespace = parts[1]
 					repository = parts[2]
 				} else {
-					// registry/user 形式，user 既是 namespace 也是 repository
-					namespace = parts[1]
+					// registry/user 形式：user 作为 repository，namespace 留空
+					namespace = ""
 					repository = parts[1]
 				}
 			} else {
@@ -62,7 +62,13 @@ func (ac *AccessController) parseDockerImage(image string) dockerImageInfo {
 		repository = image
 	}
 
-	fullName := namespace + "/" + repository
+	// namespace 为空时 fullName 只用 repository，避免 "user/user" 语义错误
+	var fullName string
+	if namespace != "" {
+		fullName = namespace + "/" + repository
+	} else {
+		fullName = repository
+	}
 
 	return dockerImageInfo{
 		Namespace:  namespace,

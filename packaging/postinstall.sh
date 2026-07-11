@@ -5,6 +5,26 @@ warn() {
     echo "hubproxy: $1"
 }
 
+# 创建系统用户（幂等）
+if ! getent passwd hubproxy >/dev/null 2>&1; then
+    if command -v useradd >/dev/null 2>&1; then
+        useradd --system --no-create-home --shell /usr/sbin/nologin hubproxy || warn "创建用户 hubproxy 失败"
+    elif command -v adduser >/dev/null 2>&1; then
+        adduser --system --no-create-home --disabled-password hubproxy || warn "创建用户 hubproxy 失败"
+    elif command -v addgroup >/dev/null 2>&1 && command -v adduser >/dev/null 2>&1; then
+        addgroup -S hubproxy 2>/dev/null || true
+        adduser -S -D -H -s /sbin/nologin -G hubproxy hubproxy || warn "创建用户 hubproxy 失败"
+    else
+        warn "无法创建系统用户 hubproxy，请手动创建"
+    fi
+fi
+
+# 确保日志目录存在且可写
+if [ -d /var/log ]; then
+    mkdir -p /var/log/hubproxy 2>/dev/null || true
+    chown -R hubproxy:hubproxy /var/log/hubproxy 2>/dev/null || true
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || warn "systemd reload failed"
     systemctl enable hubproxy >/dev/null 2>&1 || warn "systemd enable failed"

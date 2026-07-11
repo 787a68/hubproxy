@@ -111,7 +111,7 @@ ASSET_URL="$(asset_url "$ASSET")"
 
 PACKAGE_FILE="${TMP_DIR}/$(basename "$ASSET_URL")"
 log "下载安装包..."
-curl -fL -o "$PACKAGE_FILE" "$ASSET_URL" || fail "下载安装包失败"
+curl -fL --retry 3 --retry-delay 2 -o "$PACKAGE_FILE" "$ASSET_URL" || fail "下载安装包失败"
 
 log "安装软件包..."
 install_package "$PACKAGE_FILE" "$PACKAGER"

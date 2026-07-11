@@ -139,12 +139,6 @@ func (c *SearchCache) SetWithTTL(key string, data interface{}, ttl time.Duration
 	}
 }
 
-func (c *SearchCache) Cleanup() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cleanupExpiredLocked()
-}
-
 func (c *SearchCache) cleanupExpiredLocked() {
 	now := time.Now()
 	for key, entry := range c.data {

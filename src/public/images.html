@@ -77,6 +77,7 @@
                             <option value="linux/386">linux/386</option>
                             <option value="linux/ppc64le">linux/ppc64le</option>
                             <option value="linux/s390x">linux/s390x</option>
+                            <option value="windows/amd64">windows/amd64</option>
                             <option value="">自动选择</option>
                         </select>
                         <div class="help-text">常用平台: linux/amd64, linux/arm64, linux/arm/v7</div>
@@ -110,6 +111,7 @@
                             <option value="linux/386">linux/386</option>
                             <option value="linux/ppc64le">linux/ppc64le</option>
                             <option value="linux/s390x">linux/s390x</option>
+                            <option value="windows/amd64">windows/amd64</option>
                             <option value="">自动选择</option>
                         </select>
                         <div class="help-text">所有镜像将使用相同的目标架构</div>
@@ -210,7 +212,12 @@
                 const response = await fetch(url);
                 if (!response.ok) {
                     let errorMsg = '下载失败';
-                    try { const err = await response.json(); errorMsg = err.error || errorMsg; } catch (e) {}
+                    const contentType = response.headers.get('Content-Type') || '';
+                    if (contentType.includes('application/json')) {
+                        try { const err = await response.json(); errorMsg = err.error || errorMsg; } catch (e) {}
+                    } else {
+                        try { const text = await response.text(); if (text) errorMsg = text; } catch (e) {}
+                    }
                     showStatus(statusId, errorMsg, 'error');
                     return;
                 }

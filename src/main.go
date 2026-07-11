@@ -130,6 +130,7 @@ func main() {
 	handlers.InitDockerProxy()
 	handlers.InitImageStreamer()
 	handlers.InitDebouncer()
+	handlers.InitRewriteHosts()
 
 	cfg := config.GetConfig()
 	router := buildRouter(cfg)

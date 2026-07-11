@@ -32,12 +32,11 @@ import (
 // DebounceEntry 防抖条目
 type DebounceEntry struct {
 	LastRequest time.Time
-	UserID      string
 }
 
 // DownloadDebouncer 下载防抖器
 type DownloadDebouncer struct {
-	mu          sync.RWMutex
+	mu          sync.Mutex
 	entries     map[string]*DebounceEntry
 	window      time.Duration
 	lastCleanup time.Time
@@ -68,7 +67,6 @@ func (d *DownloadDebouncer) ShouldAllow(userID, contentKey string) bool {
 
 	d.entries[key] = &DebounceEntry{
 		LastRequest: now,
-		UserID:      userID,
 	}
 
 	if time.Since(d.lastCleanup) > 5*time.Minute {
@@ -100,18 +98,14 @@ func generateContentFingerprint(images []string, platform string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// getUserID 获取用户标识
+// getUserID 获取用户标识（基于 IP + UserAgent 的哈希）
 func getUserID(c *gin.Context) string {
-	ip := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-	if userAgent == "" {
-		userAgent = "unknown"
-	}
-	combined := ip + ":" + userAgent
-	hash := md5.Sum([]byte(combined))
+	ip, userAgent := getClientIdentity(c)
+	hash := md5.Sum([]byte(ip + ":" + userAgent))
 	return "ip:" + hex.EncodeToString(hash[:8])
 }
 
+// getClientIdentity 获取客户端 IP 和 UserAgent
 func getClientIdentity(c *gin.Context) (string, string) {
 	ip := c.ClientIP()
 	userAgent := c.GetHeader("User-Agent")
@@ -152,7 +146,7 @@ type tokenEntry[T any] struct {
 }
 
 type tokenStore[T any] struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	entries map[string]tokenEntry[T]
 }
 
@@ -553,6 +547,11 @@ func (is *ImageStreamer) selectPlatformImage(desc *remote.Descriptor, options *S
 
 	if selectedDesc == nil && len(manifest.Manifests) > 0 {
 		selectedDesc = &manifest.Manifests[0]
+		if options.Platform != "" {
+			utils.Logger().Warn("platform not found, falling back to first manifest",
+				"requested", options.Platform, "fallback_platform",
+				selectedDesc.Platform.OS+"/"+selectedDesc.Platform.Architecture)
+		}
 	}
 
 	if selectedDesc == nil {
@@ -588,8 +587,8 @@ func InitImageTarRoutes(router *gin.Engine) {
 	{
 		imageAPI.GET("/download/:image", handleDirectImageDownload)
 		imageAPI.GET("/info/:image", handleImageInfo)
-		imageAPI.GET("/batch", handleSimpleBatchDownload)
-		imageAPI.POST("/batch", handleSimpleBatchDownload)
+		imageAPI.GET("/batch", handleBatchDownloadByToken)
+		imageAPI.POST("/batch", handleBatchDownloadPrepare)
 	}
 }
 
@@ -689,48 +688,48 @@ func handleDirectImageDownload(c *gin.Context) {
 	}
 }
 
-// handleSimpleBatchDownload 处理批量下载
-func handleSimpleBatchDownload(c *gin.Context) {
-	if c.Request.Method == http.MethodGet {
-		token := c.Query("token")
-		if token == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少下载令牌"})
-			return
-		}
-
-		ip, userAgent := getClientIdentity(c)
-		req, ok := batchDownloadTokens.consume(token, ip, userAgent)
-		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效或过期的下载令牌"})
-			return
-		}
-
-		if len(req.Images) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
-			return
-		}
-
-		options := &StreamOptions{
-			Platform:            req.Platform,
-			Compression:         false,
-			UseCompressedLayers: req.UseCompressedLayers,
-		}
-
-		ctx := c.Request.Context()
-		utils.Logger().Info("batch downloading", "count", len(req.Images), "platform", formatPlatformText(req.Platform))
-
-		filename := fmt.Sprintf("batch_%d_images.tar", len(req.Images))
-
-		setDownloadHeaders(c, filename, options.Compression)
-
-		if err := globalImageStreamer.StreamMultipleImages(ctx, req.Images, c.Writer, options); err != nil {
-			utils.Logger().Error("batch download failed", "err", err)
-			c.String(http.StatusInternalServerError, "批量镜像下载失败")
-			return
-		}
+// handleBatchDownloadByToken 处理批量下载（GET，消费 token 下载）
+func handleBatchDownloadByToken(c *gin.Context) {
+	token := c.Query("token")
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少下载令牌"})
 		return
 	}
 
+	ip, userAgent := getClientIdentity(c)
+	req, ok := batchDownloadTokens.consume(token, ip, userAgent)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效或过期的下载令牌"})
+		return
+	}
+
+	if len(req.Images) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "镜像列表不能为空"})
+		return
+	}
+
+	options := &StreamOptions{
+		Platform:            req.Platform,
+		Compression:         false,
+		UseCompressedLayers: req.UseCompressedLayers,
+	}
+
+	ctx := c.Request.Context()
+	utils.Logger().Info("batch downloading", "count", len(req.Images), "platform", formatPlatformText(req.Platform))
+
+	filename := fmt.Sprintf("batch_%d_images.tar", len(req.Images))
+
+	setDownloadHeaders(c, filename, options.Compression)
+
+	if err := globalImageStreamer.StreamMultipleImages(ctx, req.Images, c.Writer, options); err != nil {
+		utils.Logger().Error("batch download failed", "err", err)
+		c.String(http.StatusInternalServerError, "批量镜像下载失败")
+		return
+	}
+}
+
+// handleBatchDownloadPrepare 处理批量下载准备（POST，创建 token）
+func handleBatchDownloadPrepare(c *gin.Context) {
 	if c.Query("mode") != "prepare" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只支持prepare模式"})
 		return

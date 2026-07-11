@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -18,11 +19,14 @@ type CachedItem struct {
 	ContentType string
 	Headers     map[string]string
 	ExpiresAt   time.Time
+	LastAccess  time.Time
 }
 
 const (
 	cacheShards      = 64
 	cacheMaxPerShard = 512
+	// cacheCleanupInterval 缓存过期清理周期
+	cacheCleanupInterval = 20 * time.Minute
 )
 
 // cacheShard 分片缓存，每个分片独立互斥锁
@@ -43,7 +47,7 @@ func (c *UniversalCache) shard(key string) *cacheShard {
 	return &c.shards[fnv32(key)%cacheShards]
 }
 
-// Get 获取缓存项（hot path，仅持锁一次分片）
+// Get 获取缓存项（hot path，仅持锁一次分片；命中时更新 LastAccess 用于 LRU）
 func (c *UniversalCache) Get(key string) *CachedItem {
 	s := c.shard(key)
 	s.mu.Lock()
@@ -52,6 +56,9 @@ func (c *UniversalCache) Get(key string) *CachedItem {
 		delete(s.items, key)
 		ok = false
 	}
+	if ok {
+		item.LastAccess = time.Now()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return nil
@@ -59,21 +66,31 @@ func (c *UniversalCache) Get(key string) *CachedItem {
 	return item
 }
 
-// Set 写入缓存，超额时随机淘汰
+// Set 写入缓存，超额时按 LRU 淘汰最久未访问的条目
 func (c *UniversalCache) Set(key string, data []byte, contentType string, headers map[string]string, ttl time.Duration) {
 	s := c.shard(key)
 	s.mu.Lock()
 	if len(s.items) >= cacheMaxPerShard {
-		for k := range s.items {
-			delete(s.items, k)
-			break
+		// LRU 淘汰：找最久未访问的条目
+		var oldestKey string
+		var oldestAccess time.Time
+		for k, v := range s.items {
+			if oldestKey == "" || v.LastAccess.Before(oldestAccess) {
+				oldestKey = k
+				oldestAccess = v.LastAccess
+			}
+		}
+		if oldestKey != "" {
+			delete(s.items, oldestKey)
 		}
 	}
+	now := time.Now()
 	s.items[key] = &CachedItem{
 		Data:        data,
 		ContentType: contentType,
 		Headers:     headers,
-		ExpiresAt:   time.Now().Add(ttl),
+		ExpiresAt:   now.Add(ttl),
+		LastAccess:  now,
 	}
 	s.mu.Unlock()
 }
@@ -154,17 +171,14 @@ func ExtractTTLFromResponse(responseBody []byte) time.Duration {
 
 func WriteTokenResponse(c *gin.Context, cachedBody string) {
 	c.Header("Content-Type", "application/json")
-	c.String(200, cachedBody)
+	c.String(http.StatusOK, cachedBody)
 }
 
 func WriteCachedResponse(c *gin.Context, item *CachedItem) {
-	if item.ContentType != "" {
-		c.Header("Content-Type", item.ContentType)
-	}
 	for key, value := range item.Headers {
 		c.Header(key, value)
 	}
-	c.Data(200, item.ContentType, item.Data)
+	c.Data(http.StatusOK, item.ContentType, item.Data)
 }
 
 // IsCacheEnabled 检查缓存是否启用
@@ -179,7 +193,7 @@ func init() {
 	}
 
 	go func() {
-		ticker := time.NewTicker(cleanupInterval)
+		ticker := time.NewTicker(cacheCleanupInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			now := time.Now()
