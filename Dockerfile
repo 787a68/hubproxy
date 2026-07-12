@@ -28,16 +28,20 @@ LABEL org.opencontainers.image.title="HubProxy" \
       org.opencontainers.image.source="https://github.com/787a68/hubproxy" \
       org.opencontainers.image.licenses="MIT"
 
-RUN adduser -D -u 1000 hubproxy
+RUN adduser -D -u 1000 hubproxy && \
+    mkdir -p /etc/hubproxy && \
+    chown hubproxy:hubproxy /etc/hubproxy
 
 WORKDIR /app
 
 COPY --from=builder /app/hubproxy .
-COPY --from=builder /app/config.toml .
+COPY --from=builder /app/config.toml /etc/hubproxy/config.toml
 
 USER hubproxy
 
 EXPOSE 5000
+
+ENV CONFIG_PATH=/etc/hubproxy/config.toml
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget -qO- http://127.0.0.1:5000/healthz || exit 1

@@ -19,11 +19,9 @@ if ! getent passwd hubproxy >/dev/null 2>&1; then
     fi
 fi
 
-# 确保日志目录存在且可写
-if [ -d /var/log ]; then
-    mkdir -p /var/log/hubproxy 2>/dev/null || true
-    chown -R hubproxy:hubproxy /var/log/hubproxy 2>/dev/null || true
-fi
+# 确保配置目录存在且日志文件可写
+mkdir -p /etc/hubproxy 2>/dev/null || true
+chown -R hubproxy:hubproxy /etc/hubproxy 2>/dev/null || true
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || warn "systemd reload failed"

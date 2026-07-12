@@ -1,6 +1,6 @@
 # HubProxy
 
-Docker 镜像、GitHub 文件、Hugging Face 文件加速代理。单二进制，自带前端，自动跟随系统深色模式。
+Docker 镜像、GitHub 文件、Hugging Face 文件下载加速。单二进制，docker。
 
 ## 功能
 
@@ -119,7 +119,7 @@ curl http://127.0.0.1:5000/metrics
 | `[download] maxImages` | `MAX_IMAGES` | `10` | 批量离线包最大镜像数 |
 | `cache` | `CACHE` | `20m` | 缓存 TTL，`off` 禁用，否则 Go duration 格式 |
 | `logLevel` | `LOG_LEVEL` | `info` | 日志等级：`debug`/`info`/`warn`/`error` |
-| `logFile` | `LOG_FILE` | 空 | 日志文件路径，为空只输出到 stdout |
+| `logFile` | `LOG_FILE` | 自动 | 日志文件路径，为空时自动写入 `CONFIG_PATH` 所在目录下的 `hubproxy.log` |
 | — | `CONFIG_PATH` | `config.toml` | 配置文件路径 |
 
 ### 限速规则

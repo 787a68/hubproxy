@@ -5,8 +5,11 @@ services:
     restart: always
     ports:
       - "5000:5000"
+    environment:
+      - CONFIG_PATH=/etc/hubproxy/config.toml
     volumes:
-      - ./src/config.toml:/app/config.toml:ro
+      - ./src/config.toml:/etc/hubproxy/config.toml:ro
+      - hubproxy-data:/etc/hubproxy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/healthz"]
       interval: 30s
@@ -17,3 +20,6 @@ services:
       options:
         max-size: "50m"
         max-file: "2"
+
+volumes:
+  hubproxy-data:

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,12 +59,12 @@ type AppConfig struct {
 	// LogLevel 日志等级：debug/info/warn/error
 	LogLevel string `toml:"logLevel"`
 
-	// LogFile 日志文件路径，为空则只输出到 stdout
+	// LogFile 日志文件路径，为空则从 CONFIG_PATH 的目录派生（同目录下 hubproxy.log）
 	LogFile string `toml:"logFile"`
 
 	// 解析后的派生字段（不来自 TOML，加载时计算）
-	parsedTTL   time.Duration
-	cacheOn     bool
+	parsedTTL     time.Duration
+	cacheOn       bool
 	sortedDomains []string // 按长度降序排列的 registry 域名，保证最长前缀匹配
 }
 
@@ -124,10 +125,28 @@ func GetConfig() *AppConfig {
 
 // configFilePath 返回配置文件路径
 func configFilePath() string {
-	if path := strings.TrimSpace(os.Getenv("CONFIG_PATH")); path != "" {
-		return path
+	if p := strings.TrimSpace(os.Getenv("CONFIG_PATH")); p != "" {
+		return p
 	}
 	return "config.toml"
+}
+
+// deriveLogFile 返回日志文件路径
+// 优先使用 LOG_FILE 环境变量或配置文件中的 logFile
+// 为空时从 CONFIG_PATH 所在目录派生（同目录下 hubproxy.log），CONFIG_PATH 为空则不写文件
+func deriveLogFile(cfg *AppConfig) string {
+	if cfg.LogFile != "" {
+		return cfg.LogFile
+	}
+	p := strings.TrimSpace(os.Getenv("CONFIG_PATH"))
+	if p == "" {
+		return ""
+	}
+	dir := filepath.Dir(p)
+	if dir == "." || dir == "" {
+		return "hubproxy.log"
+	}
+	return filepath.Join(dir, "hubproxy.log")
 }
 
 // LoadConfig 加载配置（仅在启动时调用一次）
@@ -146,6 +165,7 @@ func LoadConfig() error {
 	overrideFromEnv(cfg)
 	mergeDefaultRegistries(cfg)
 	applyDerived(cfg)
+	cfg.LogFile = deriveLogFile(cfg)
 	configHolder.Store(cfg)
 	return nil
 }

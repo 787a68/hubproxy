@@ -516,30 +516,29 @@ func (is *ImageStreamer) selectPlatformImage(desc *remote.Descriptor, options *S
 		return nil, fmt.Errorf("获取索引清单失败: %w", err)
 	}
 
+	// 解析用户指定的平台（支持模糊匹配，如 linux/arm 匹配 linux/arm/v7）
+	var userPlatform *v1.Platform
+	if options.Platform != "" {
+		userPlatform, err = v1.ParsePlatform(options.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("无效的平台格式 %q: %w", options.Platform, err)
+		}
+	}
+
 	var selectedDesc *v1.Descriptor
 	for _, m := range manifest.Manifests {
 		if m.Platform == nil {
 			continue
 		}
 
-		if options.Platform != "" {
-			platformParts := strings.Split(options.Platform, "/")
-			if len(platformParts) >= 2 {
-				targetOS := platformParts[0]
-				targetArch := platformParts[1]
-				targetVariant := ""
-				if len(platformParts) >= 3 {
-					targetVariant = platformParts[2]
-				}
-
-				if m.Platform.OS == targetOS &&
-					m.Platform.Architecture == targetArch &&
-					m.Platform.Variant == targetVariant {
-					selectedDesc = &m
-					break
-				}
+		if userPlatform != nil {
+			// 用户指定平台：用 Satisfies 模糊匹配（缺失字段通配）
+			if m.Platform.Satisfies(*userPlatform) {
+				selectedDesc = &m
+				break
 			}
 		} else if m.Platform.OS == "linux" && m.Platform.Architecture == "amd64" {
+			// 自动选择：默认 linux/amd64
 			selectedDesc = &m
 			break
 		}
@@ -547,9 +546,16 @@ func (is *ImageStreamer) selectPlatformImage(desc *remote.Descriptor, options *S
 
 	if selectedDesc == nil && len(manifest.Manifests) > 0 {
 		selectedDesc = &manifest.Manifests[0]
-		if options.Platform != "" {
-			utils.Logger().Warn("platform not found, falling back to first manifest",
-				"requested", options.Platform, "fallback_platform",
+		// fallback 时优先选同 OS 的 manifest
+		if userPlatform != nil {
+			for _, m := range manifest.Manifests {
+				if m.Platform != nil && m.Platform.OS == userPlatform.OS {
+					selectedDesc = &m
+					break
+				}
+			}
+			utils.Logger().Warn("platform not found, falling back",
+				"requested", options.Platform, "fallback",
 				selectedDesc.Platform.OS+"/"+selectedDesc.Platform.Architecture)
 		}
 	}
